@@ -1,6 +1,8 @@
 import sys
 import os
 import time
+import json
+import base64
 import pandas as pd
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -19,23 +21,62 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
 
+
 # ======================================================
-# =============       AI 处理逻辑函数       ============
+# ============  文件路径与 API Key 存储功能  ============
 # ======================================================
 
-# 初始化 DeepSeek 客户端（只保留一次）
-client = OpenAI(
-    api_key=os.getenv("DEEPSEEK_API_KEY"),
-    base_url="https://api.deepseek.com"
-)
+CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".deepseek_config.json")
+
+
+def encode_key(key: str) -> str:
+    """简单加密（非安全）"""
+    return base64.b64encode(key.encode("utf-8")).decode("utf-8")
+
+
+def decode_key(data: str) -> str:
+    """解密"""
+    try:
+        return base64.b64decode(data.encode("utf-8")).decode("utf-8")
+    except:
+        return ""
+
+
+def save_api_key(key: str):
+    """保存到 ~/.deepseek_config.json"""
+    try:
+        data = {"api_key": encode_key(key)}
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+    except Exception as e:
+        logging.error(f"保存 API Key 失败：{e}")
+
+
+def load_api_key() -> str:
+    """读取 API Key"""
+    if not os.path.exists(CONFIG_PATH):
+        return ""
+
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return decode_key(data.get("api_key", ""))
+    except:
+        return ""
+
+
+# ======================================================
+# =============   全局 client（动态创建）  ============
+# ======================================================
+
+client = None
 
 
 def call_model(prompt: str, max_retries: int = 3) -> str:
-    """
-    调用 DeepSeek 模型，带简单重试机制。
-    若最终失败，返回空字符串 ""。
-    """
-    backoff_base = 2  # 指数退避基数
+    if client is None:
+        raise RuntimeError("API 客户端尚未初始化，请输入 API Key！")
+
+    backoff_base = 2
     for attempt in range(max_retries):
         try:
             resp = client.chat.completions.create(
@@ -47,27 +88,17 @@ def call_model(prompt: str, max_retries: int = 3) -> str:
         except Exception as e:
             logging.error(f"模型调用失败（第 {attempt + 1} 次）：{e}")
             if attempt < max_retries - 1:
-                # 简单指数退避
-                sleep_sec = backoff_base ** attempt
-                time.sleep(sleep_sec)
+                time.sleep(backoff_base ** attempt)
             else:
-                # 最终失败
                 return ""
     return ""
 
 
+# ======================================================
+# =============      你的原始处理逻辑       =============
+# ======================================================
+
 def process_row(row_index, merged_text, delimiter, prompt_template, cache_key):
-    """
-    单行处理逻辑。
-    返回结构：
-    {
-        "index": 行号,
-        "output": 模型输出或错误占位,
-        "cache_key": 缓存键,
-        "error": bool,
-        "error_msg": str
-    }
-    """
     prompt = (
         prompt_template
         .replace("{merged_text}", merged_text)
@@ -98,30 +129,18 @@ def process_row(row_index, merged_text, delimiter, prompt_template, cache_key):
 
 
 def run_processing(input_path, cols, delimiter, output_path, prompt, progress_cb, stop_flag):
-    """
-    主处理函数：
-    - 读取 Excel
-    - 多线程调用 AI
-    - 写回结果
-    - 支持中断
-    - 支持缓存
-    - 记录错误行
-    """
     df = pd.read_excel(input_path)
     df["AI_Output"] = ""
     total = len(df)
 
-    cache = {}          # key -> {"output", "error", "error_msg"}
-    results = []        # 每行结果
-    error_rows = []     # 记录错误信息
-
-    # 用于进度计算
+    cache = {}
+    results = []
+    error_rows = []
     done_cnt = 0
 
     with ThreadPoolExecutor(max_workers=20) as pool:
         tasks = []
 
-        # 先提交任务（同时利用缓存）
         for idx, row in df.iterrows():
             if stop_flag():
                 break
@@ -129,7 +148,6 @@ def run_processing(input_path, cols, delimiter, output_path, prompt, progress_cb
             merged_text = "\n".join(str(row[c]) for c in cols if c in df.columns)
             key = f"{merged_text}|{delimiter}|{prompt}"
 
-            # 缓存命中，直接使用
             if key in cache:
                 cached = cache[key]
                 r = {
@@ -140,12 +158,14 @@ def run_processing(input_path, cols, delimiter, output_path, prompt, progress_cb
                     "error_msg": cached["error_msg"],
                 }
                 results.append(r)
+
                 if r["error"]:
                     error_rows.append(f"行 {idx}：{r['error_msg']}（缓存）")
+
                 done_cnt += 1
                 progress_cb(done_cnt, total)
+
             else:
-                # 未命中，提交到线程池
                 future = pool.submit(
                     process_row,
                     idx,
@@ -156,16 +176,13 @@ def run_processing(input_path, cols, delimiter, output_path, prompt, progress_cb
                 )
                 tasks.append(future)
 
-        # 处理线程池返回结果
         for future in as_completed(tasks):
             if stop_flag():
-                # 用户中断，停止收集更多结果（但线程池会自然跑完）
                 break
 
             r = future.result()
             results.append(r)
 
-            # 写入缓存（不包含 index）
             cache[r["cache_key"]] = {
                 "output": r["output"],
                 "error": r["error"],
@@ -178,14 +195,11 @@ def run_processing(input_path, cols, delimiter, output_path, prompt, progress_cb
             done_cnt += 1
             progress_cb(done_cnt, total)
 
-    # 写回已完成结果（包括缓存和实际调用的）
     for r in results:
         df.at[r["index"], "AI_Output"] = r["output"]
 
-    # 保存主结果
     df.to_excel(output_path, index=False)
 
-    # 保存错误日志
     if error_rows:
         with open("error_log.txt", "w", encoding="utf-8") as f:
             f.write("\n".join(error_rows))
@@ -193,20 +207,19 @@ def run_processing(input_path, cols, delimiter, output_path, prompt, progress_cb
     processed_count = len(results)
 
     if stop_flag():
-        return False, f"用户中断任务，已处理 {processed_count}/{total} 行（错误 {len(error_rows)} 行，详情见 error_log.txt）"
+        return False, f"用户中断，已处理 {processed_count}/{total} 行（错误 {len(error_rows)} 行）"
     else:
         if error_rows:
-            return True, f"处理完成：{total} 行，其中错误 {len(error_rows)} 行（详情见 error_log.txt）"
+            return True, f"处理完成：{total} 行，错误 {len(error_rows)} 行"
         else:
             return True, f"处理完成：{total} 行，全部成功"
 
 
 # ======================================================
-# =================     后台线程类      ================
+# =================       线程类       =================
 # ======================================================
 
 class Worker(QThread):
-    # 进度信号：已完成、总数、预计剩余秒数
     progress = Signal(int, int, float)
     finished = Signal(bool, str)
 
@@ -230,15 +243,12 @@ class Worker(QThread):
         self._start_time = time.time()
 
         def cb(done, total):
-            # 在回调里计算预计剩余时间
             elapsed = time.time() - self._start_time if self._start_time else 0
             if done > 0 and elapsed > 0:
-                rate = elapsed / done  # 秒 / 条
-                remaining = max(total - done, 0)
-                eta = remaining * rate
+                rate = elapsed / done
+                eta = (total - done) * rate
             else:
-                eta = -1.0  # 不可用
-
+                eta = -1
             self.progress.emit(done, total, eta)
 
         ok, msg = run_processing(
@@ -257,19 +267,19 @@ class ApiTestThread(QThread):
     finished = Signal(bool, str)
 
     def run(self):
-        test_prompt = "这是一个测试请求，请简单回复“OK”。"
+        test_prompt = "这是一个测试请求，请简单回复：OK"
         try:
             resp = call_model(test_prompt, max_retries=2)
             if resp:
-                self.finished.emit(True, "API 测试成功，可正常调用。")
+                self.finished.emit(True, "API 测试成功！")
             else:
-                self.finished.emit(False, "API 调用失败或返回空内容，请检查网络或密钥。")
+                self.finished.emit(False, "API 调用失败或返回空内容。")
         except Exception as e:
             self.finished.emit(False, f"API 测试异常：{e}")
 
 
 # ======================================================
-# =================       主 GUI 界面      ==============
+# ======================   GUI   =======================
 # ======================================================
 
 class MainWindow(QMainWindow):
@@ -306,10 +316,21 @@ class MainWindow(QMainWindow):
         btn2.clicked.connect(self.choose_output)
         file_layout.addWidget(btn2, 1, 2)
 
+        # ======== API Key 输入框 ========
+        file_layout.addWidget(QLabel("API Key："), 2, 0)
+        self.api_key_edit = QLineEdit()
+        self.api_key_edit.setEchoMode(QLineEdit.Password)
+        file_layout.addWidget(self.api_key_edit, 2, 1, 1, 2)
+
+        # 🔄 程序启动时自动加载 API Key
+        saved_key = load_api_key()
+        if saved_key:
+            self.api_key_edit.setText(saved_key)
+
         # API 测试按钮
         self.test_api_btn = QPushButton("🔍 测试 API")
         self.test_api_btn.clicked.connect(self.test_api)
-        file_layout.addWidget(self.test_api_btn, 2, 0, 1, 3)
+        file_layout.addWidget(self.test_api_btn, 3, 0, 1, 3)
 
         layout.addWidget(file_box)
 
@@ -344,39 +365,7 @@ class MainWindow(QMainWindow):
         prompt_layout = QVBoxLayout()
 
         self.prompt_edit = QTextEdit()
-        self.prompt_edit.setPlainText(
-            "你是一名专业领域的文献筛选专家。\n\n"
-            "【任务目标】\n"
-            "根据提供的文章内容，判断其是否属于【研究类型名称】类文献，并给出是否保留与匹配评分。\n\n"
-            "【判定标准】\n"
-            "1. 若文章具备以下任意特征，可判断为【研究类型名称】：\n"
-            "   - 【特征1】\n"
-            "   - 【特征2】\n"
-            "   - 【特征3】\n"
-            "   - （可自行添加更多特征）\n"
-            "2. 若文章具备以下任意情况，则不属于【研究类型名称】：\n"
-            "   - 【排除条件1】\n"
-            "   - 【排除条件2】\n"
-            "   - 【排除条件3】\n"
-            "   - （可自行添加更多排除条件）\n\n"
-            "【输出要求 —— 必须严格遵守】\n"
-            "你必须只输出一行内容，包含以下 3 个字段，严格按顺序输出：\n\n"
-            "① 是否属于【研究类型名称】（只能输出：是 / 否）\n"
-            "② 是否应该保留（只能输出：保留 / 不保留）\n"
-            "③ 匹配评分（0–100 的整数）\n\n"
-            "字段之间必须使用以下分隔符（不得添加空格，不得换行）：\n"
-            "{delimiter}\n\n"
-            "输出格式示例（请严格仿照示例格式输出，但替换为你的判断结果）：\n"
-            "是{delimiter}保留{delimiter}85\n\n"
-            "⚠️ 严格禁止：\n"
-            "- 输出任何换行\n"
-            "- 输出任何解释说明、理由、总结\n"
-            "- 输出任何额外符号、标点、序号\n"
-            "- 输出除三个字段外的任何文字\n"
-            "- 输出前后空格或换行\n\n"
-            "【文章内容】\n"
-            "{merged_text}"
-        )
+        self.prompt_edit.setPlainText( "你是一名专业领域的文献筛选专家。\n\n" "【任务目标】\n" "根据提供的文章内容，判断其是否属于【研究类型名称】类文献，并给出是否保留与匹配评分。\n\n" "【判定标准】\n" "1. 若文章具备以下任意特征，可判断为【研究类型名称】：\n" " - 【特征1】\n" " - 【特征2】\n" " - 【特征3】\n" " - （可自行添加更多特征）\n" "2. 若文章具备以下任意情况，则不属于【研究类型名称】：\n" " - 【排除条件1】\n" " - 【排除条件2】\n" " - 【排除条件3】\n" " - （可自行添加更多排除条件）\n\n" "【输出要求 —— 必须严格遵守】\n" "你必须只输出一行内容，包含以下 3 个字段，严格按顺序输出：\n\n" "① 是否属于【研究类型名称】（只能输出：是 / 否）\n" "② 是否应该保留（只能输出：保留 / 不保留）\n" "③ 匹配评分（0–100 的整数）\n\n" "字段之间必须使用以下分隔符（不得添加空格，不得换行）：\n" "{delimiter}\n\n" "输出格式示例（请严格仿照示例格式输出，但替换为你的判断结果）：\n" "是{delimiter}保留{delimiter}85\n\n" "⚠️ 严格禁止：\n" "- 输出任何换行\n" "- 输出任何解释说明、理由、总结\n" "- 输出任何额外符号、标点、序号\n" "- 输出除三个字段外的任何文字\n" "- 输出前后空格或换行\n\n" "【文章内容】\n" "{merged_text}" )
         prompt_layout.addWidget(self.prompt_edit)
         prompt_box.setLayout(prompt_layout)
         layout.addWidget(prompt_box)
@@ -402,6 +391,28 @@ class MainWindow(QMainWindow):
         layout.addLayout(control)
 
     # ==================================================
+    # ========== API 客户端动态创建函数 ================
+    # ==================================================
+
+    def get_client(self):
+        """根据输入框创建新的 client，并自动保存 API Key"""
+        global client
+        api_key = self.api_key_edit.text().strip()
+
+        if not api_key:
+            QMessageBox.warning(self, "错误", "请先输入 API Key！")
+            return None
+
+        # 自动保存 key
+        save_api_key(api_key)
+
+        client = OpenAI(
+            api_key=api_key,
+            base_url="https://api.deepseek.com"
+        )
+        return client
+
+    # ==================================================
     # ================== 事件函数 =======================
     # ==================================================
 
@@ -409,7 +420,6 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(self, "选择 Excel 文件", "", "Excel (*.xlsx)")
         if not path:
             return
-
         self.input_edit.setText(path)
         self.load_columns(path)
 
@@ -419,7 +429,6 @@ class MainWindow(QMainWindow):
             self.output_edit.setText(path)
 
     def load_columns(self, excel_path):
-        """自动加载列名"""
         try:
             df = pd.read_excel(excel_path)
             columns = list(df.columns)
@@ -437,6 +446,10 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "错误", f"加载列失败：{e}")
 
     def start(self):
+        # 初始化 client + 保存 API Key
+        if self.get_client() is None:
+            return
+
         input_path = self.input_edit.text().strip()
         output_path = self.output_edit.text().strip()
         delimiter = self.delim_edit.text().strip()
@@ -485,8 +498,7 @@ class MainWindow(QMainWindow):
     def on_progress(self, done, total, eta):
         self.progress.setMaximum(total)
         self.progress.setValue(done)
-        eta_text = self.format_eta(eta)
-        self.status_label.setText(f"{done}/{total} | {eta_text}")
+        self.status_label.setText(f"{done}/{total} | {self.format_eta(eta)}")
 
     def on_finished(self, ok, msg):
         self.start_btn.setEnabled(True)
@@ -495,7 +507,9 @@ class MainWindow(QMainWindow):
         self.status_label.setText("完成" if ok else "已终止")
 
     def test_api(self):
-        """测试 DeepSeek API 是否可用"""
+        if self.get_client() is None:
+            return
+
         self.test_api_btn.setEnabled(False)
         self.status_label.setText("正在测试 API...")
 
