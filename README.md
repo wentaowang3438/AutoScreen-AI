@@ -76,7 +76,7 @@ export DEEPSEEK_API_KEY=your-api-key-here
 ### 4. 运行程序
 
 ```bash
-python filter.py
+python main.py
 ```
 
 ## 📖 使用指南
