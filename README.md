@@ -146,10 +146,9 @@ python main.py
 
 ### 调整线程数
 
-在 `filter.py` 中修改 `ThreadPoolExecutor` 的 `max_workers` 参数：
+在 `api.py` 的 `run_processing` 中修改 `ThreadPoolExecutor` 的 `max_workers` 参数：
 
 ```python
-# 第 121 行
 with ThreadPoolExecutor(max_workers=20) as pool:  # 修改这里的数字
 ```
 
@@ -160,10 +159,9 @@ with ThreadPoolExecutor(max_workers=20) as pool:  # 修改这里的数字
 
 ### 调整重试次数
 
-在 `call_model` 函数中修改 `max_retries` 参数：
+在 `api.py` 的 `call_model` 函数中修改 `max_retries` 参数：
 
 ```python
-# 第 33 行
 def call_model(prompt: str, max_retries: int = 3):  # 修改这里的数字
 ```
 
@@ -213,13 +211,31 @@ def call_model(prompt: str, max_retries: int = 3):  # 修改这里的数字
 ## 📁 项目结构
 
 ```
-AF/
-├── filter.py          # 主程序文件
-├── requirements.txt   # 依赖包列表
-├── README.md          # 本文件
-├── output.xlsx        # 输出文件（运行后生成）
-└── error_log.txt      # 错误日志（如有错误时生成）
+AutoScreen-AI/
+├── main.py            # 程序入口（精简）
+├── main_window.py     # 主窗口与业务逻辑
+├── api.py             # DeepSeek API 调用与 Excel 批处理核心逻辑
+├── config.py          # 配置路径与 API Key 管理
+├── workers.py         # 后台工作线程（Worker、ApiTestThread）
+├── widgets.py         # 自定义控件（标题栏、日志处理器）
+├── styles.py          # 全局 QSS 样式表
+├── requirements.txt   # 依赖列表
+├── README.md
+├── prompt.txt         # 提示词参考（可选）
+└── output.xlsx        # 输出文件（运行后生成）
 ```
+
+### 模块职责
+
+| 模块 | 职责 |
+|------|------|
+| `main.py` | 应用入口，加载样式并启动主窗口 |
+| `main_window.py` | 界面布局、事件处理、模板管理、进度与状态更新 |
+| `api.py` | 客户端初始化、`call_model`、`run_processing`、行级处理与缓存 |
+| `config.py` | `CONFIG_PATH`、`TEMPLATE_DIR`、API Key 编解码与持久化 |
+| `workers.py` | 批处理 `Worker` 与 API 测试 `ApiTestThread` |
+| `widgets.py` | 无边框标题栏 `CustomTitleBar`、日志桥接 `QEditTextLogger` |
+| `styles.py` | Catppuccin 风格 QSS 常量 |
 
 ## 🛠️ 技术栈
 
