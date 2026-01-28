@@ -13,13 +13,14 @@ class Worker(QThread):
     log_signal = Signal(str)
     finished = Signal(bool, str)
 
-    def __init__(self, input_path, cols, delimiter, output_path, prompt):
+    def __init__(self, input_path, cols, delimiter, output_path, prompt, max_workers=20):
         super().__init__()
         self.input_path = input_path
         self.cols = cols
         self.delimiter = delimiter
         self.output_path = output_path
         self.prompt = prompt
+        self.max_workers = max_workers
         self._stop_flag = False
         self._start_time = None
 
@@ -49,6 +50,7 @@ class Worker(QThread):
             prog_cb,
             log_cb,
             self.is_stopped,
+            self.max_workers,
         )
         self.finished.emit(ok, msg)
 

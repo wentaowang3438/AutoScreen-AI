@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QScrollArea,
     QSplitter,
+    QSpinBox,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QShortcut, QKeySequence
@@ -42,6 +43,9 @@ from config import (
     load_api_profile,
     load_current_profile_id,
     save_api_profile,
+    clear_api_profile,
+    load_max_workers,
+    save_max_workers,
 )
 from api import init_client
 from widgets import CustomTitleBar, QEditTextLogger
@@ -256,6 +260,7 @@ class MainWindow(QMainWindow):
         for profile in API_PROFILES:
             # itemData 存 profile_id，具体 base_url 和 model 从 API_PROFILES 中查
             self.api_profile_combo.addItem(profile["label"], profile["id"])
+        self.api_profile_combo.currentIndexChanged.connect(self._on_api_profile_changed)
         api_layout.addWidget(self.api_profile_combo)
 
         # API Key
@@ -283,6 +288,27 @@ class MainWindow(QMainWindow):
         self.test_api_btn.setToolTip("验证当前平台和模型下 API Key 是否可用")
         self.test_api_btn.clicked.connect(self.test_api)
         api_layout.addWidget(self.test_api_btn)
+
+        self.clear_api_btn = QPushButton("🗑 清除保存的 API")
+        self.clear_api_btn.setObjectName("DangerBtn")
+        self.clear_api_btn.setToolTip("清除当前平台保存的 API Key")
+        self.clear_api_btn.clicked.connect(self.clear_saved_api)
+        api_layout.addWidget(self.clear_api_btn)
+
+        # 并发设置
+        api_layout.addWidget(QLabel("并发线程数"))
+        workers_row = QHBoxLayout()
+        self.max_workers_spin = QSpinBox()
+        self.max_workers_spin.setMinimum(1)
+        self.max_workers_spin.setMaximum(100)
+        self.max_workers_spin.setValue(load_max_workers())
+        self.max_workers_spin.setToolTip("设置同时处理的线程数（1-100），影响处理速度")
+        self.max_workers_spin.setMinimumWidth(80)
+        self.max_workers_spin.valueChanged.connect(self._on_max_workers_changed)
+        workers_row.addWidget(self.max_workers_spin)
+        workers_row.addWidget(QLabel("（建议值：10-30）"))
+        workers_row.addStretch()
+        api_layout.addLayout(workers_row)
 
         api_box.setLayout(api_layout)
         left_content_layout.addWidget(api_box)
@@ -533,6 +559,39 @@ class MainWindow(QMainWindow):
         if hasattr(self, "col_hint") and self.col_list.count() > 0:
             self.col_hint.setText("勾选需要参与合并并发送给 AI 的列")
 
+    # ===== API Profile & Client =====
+
+    def _get_current_profile(self) -> dict:
+        """
+        根据下拉框当前选择，返回对应的 profile dict。
+        """
+        if not hasattr(self, "api_profile_combo"):
+            return API_PROFILES[0]
+        idx = self.api_profile_combo.currentIndex()
+        if idx < 0 or idx >= len(API_PROFILES):
+            return API_PROFILES[0]
+        return API_PROFILES[idx]
+
+    def _on_api_profile_changed(self, index: int) -> None:
+        """
+        切换「平台与模型」时，自动加载对应 profile 保存的 API Key。
+        仅更新输入框，不主动调用接口。
+        """
+        if index < 0:
+            return
+        profile = self._get_current_profile()
+        cfg = load_api_profile(
+            profile_id=profile["id"],
+            default_base_url=profile["base_url"],
+            default_model=profile["model"],
+        )
+        key = cfg.get("api_key") or ""
+        self.api_key_edit.setText(key)
+        if key:
+            self.append_log(f"已为 {profile['label']} 加载保存的 API Key")
+        else:
+            self.append_log(f"{profile['label']} 尚未保存 API Key，请输入后测试连接")
+
     def refresh_template_list(self):
         if not hasattr(self, "template_combo") or not self.template_combo:
             return
@@ -648,19 +707,6 @@ class MainWindow(QMainWindow):
         except (AttributeError, RuntimeError):
             pass
 
-    # ===== API Profile & Client =====
-
-    def _get_current_profile(self) -> dict:
-        """
-        根据下拉框当前选择，返回对应的 profile dict。
-        """
-        if not hasattr(self, "api_profile_combo"):
-            return API_PROFILES[0]
-        idx = self.api_profile_combo.currentIndex()
-        if idx < 0 or idx >= len(API_PROFILES):
-            return API_PROFILES[0]
-        return API_PROFILES[idx]
-
     def get_client(self):
         api_key = self.api_key_edit.text().strip()
         if not api_key:
@@ -717,6 +763,33 @@ class MainWindow(QMainWindow):
                 self.append_log(f"[失败] {msg}")
         except (AttributeError, RuntimeError):
             pass
+
+    def clear_saved_api(self):
+        """清除当前 profile 保存的 API Key"""
+        profile = self._get_current_profile()
+        reply = QMessageBox.question(
+            self,
+            "确认清除",
+            f"确定要清除 {profile['label']} 保存的 API Key 吗？\n清除后需要重新输入 API Key。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                clear_api_profile(profile["id"])
+                self.api_key_edit.clear()
+                self.append_log(f"已清除 {profile['label']} 保存的 API Key")
+                QMessageBox.information(self, "成功", f"已清除 {profile['label']} 保存的 API Key")
+            except Exception as e:
+                QMessageBox.critical(self, "错误", f"清除失败: {e}")
+                self.append_log(f"清除 API Key 失败: {e}")
+
+    def _on_max_workers_changed(self, value):
+        """并发数改变时保存设置"""
+        try:
+            save_max_workers(value)
+            self.append_log(f"并发线程数已设置为: {value}")
+        except Exception as e:
+            logging.warning(f"保存并发设置失败: {e}")
 
     def choose_input(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -808,8 +881,9 @@ class MainWindow(QMainWindow):
                 self.worker.finished.disconnect()
             except Exception:
                 pass
+        max_workers = self.max_workers_spin.value() if hasattr(self, "max_workers_spin") else 20
         self.worker = Worker(
-            input_path, selected_cols, delimiter, output_path, prompt
+            input_path, selected_cols, delimiter, output_path, prompt, max_workers
         )
         self.worker.progress.connect(self.on_progress)
         self.worker.log_signal.connect(self.append_log)

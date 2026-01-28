@@ -1,0 +1,13 @@
+# PyInstaller / 打包产物
+dist/
+build/
+localpycs/
+*.spec
+*.exe
+*.pkg
+*.pyz
+*.toc
+base_library.zip
+warn-*.txt
+xref-*.html
+qt.conf

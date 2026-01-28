@@ -145,6 +145,7 @@ def run_processing(
     progress_cb,
     log_cb,
     stop_flag,
+    max_workers=20,
 ):
     try:
         df = pd.read_excel(input_path)
@@ -158,9 +159,9 @@ def run_processing(
     error_rows = []
     done_cnt = 0
 
-    log_cb(f"开始处理 {total} 行数据...")
+    log_cb(f"开始处理 {total} 行数据... (并发数: {max_workers})")
 
-    with ThreadPoolExecutor(max_workers=20) as pool:
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
         tasks = []
         for idx, row in df.iterrows():
             if stop_flag():

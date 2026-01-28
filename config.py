@@ -151,3 +151,43 @@ def load_api_key() -> str:
     cfg = load_api_config()
     return cfg.get("api_key", "")
 
+
+def clear_api_profile(profile_id: str) -> None:
+    """
+    清除指定 profile 的 API 配置（删除保存的 API Key）。
+    - profile_id: 要清除的 profile id
+    """
+    data = _read_raw_config()
+    profiles = data.get("profiles", {})
+    if profile_id in profiles:
+        # 清除该 profile 的 api_key，保留 base_url 和 model
+        profiles[profile_id]["api_key"] = ""
+        data["profiles"] = profiles
+        _write_raw_config(data)
+
+
+# === 并发设置 ===
+
+DEFAULT_MAX_WORKERS = 20
+
+
+def save_max_workers(max_workers: int) -> None:
+    """
+    保存并发线程数设置。
+    - max_workers: 最大并发线程数（1-100）
+    """
+    max_workers = max(1, min(100, max_workers))  # 限制在 1-100 之间
+    data = _read_raw_config()
+    data["max_workers"] = max_workers
+    _write_raw_config(data)
+
+
+def load_max_workers() -> int:
+    """
+    读取并发线程数设置，默认返回 20。
+    """
+    data = _read_raw_config()
+    max_workers = data.get("max_workers", DEFAULT_MAX_WORKERS)
+    # 确保返回值在合理范围内
+    return max(1, min(100, max_workers))
+
