@@ -5,7 +5,7 @@ import time
 
 from PySide6.QtCore import QThread, Signal
 
-from api import run_processing
+from api import run_processing, get_current_model
 
 
 class Worker(QThread):
@@ -63,7 +63,7 @@ class ApiTestThread(QThread):
     def run(self):
         try:
             resp = self.client.chat.completions.create(
-                model="deepseek-chat",
+                model=get_current_model(),
                 messages=[{"role": "user", "content": "Hi"}],
                 temperature=0,
             )

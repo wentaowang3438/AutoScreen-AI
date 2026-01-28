@@ -4,31 +4,87 @@ OpenAI / DeepSeek API 调用与 Excel 批处理逻辑
 import time
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Optional
+from typing import Optional, Tuple
 
 import pandas as pd
 from openai import OpenAI
 
-from config import save_api_key
+from config import (
+    save_api_config,
+    load_api_config,
+    DEFAULT_BASE_URL,
+    DEFAULT_MODEL,
+)
 
-# 全局客户端，由 init_client 设置
+# 全局客户端与当前模型配置，由 init_client 设置
 _client: Optional[OpenAI] = None
+_base_url: str = DEFAULT_BASE_URL
+_model: str = DEFAULT_MODEL
 
 
-def init_client(api_key: str) -> OpenAI | None:
-    """初始化并保存 API 客户端。成功时返回客户端，失败返回 None。"""
-    global _client
+def init_client(api_key: str, base_url: Optional[str] = None, model: Optional[str] = None) -> OpenAI | None:
+    """
+    初始化并保存 API 客户端。
+    - api_key: 用户输入的密钥
+    - base_url: 可选，自定义接口地址；为空时使用默认
+    - model: 可选，模型名称；为空时使用默认
+    """
+    global _client, _base_url, _model
+
     if not api_key or not api_key.strip():
         return None
     api_key = api_key.strip()
-    save_api_key(api_key)
-    _client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+
+    if not base_url:
+        base_url = DEFAULT_BASE_URL
+    if not model:
+        model = DEFAULT_MODEL
+
+    _base_url = base_url
+    _model = model
+
+    # 持久化配置
+    save_api_config(api_key, _base_url, _model)
+
+    _client = OpenAI(api_key=api_key, base_url=_base_url)
     return _client
+
+
+def restore_client_from_config() -> Tuple[Optional[OpenAI], str]:
+    """
+    根据本地配置文件恢复 client（用于程序启动时自动加载）。
+    返回：(client 或 None, 当前模型名)
+    """
+    global _client, _base_url, _model
+    cfg = load_api_config()
+    api_key = cfg.get("api_key") or ""
+    _base_url = cfg.get("base_url") or DEFAULT_BASE_URL
+    _model = cfg.get("model") or DEFAULT_MODEL
+    if not api_key:
+        _client = None
+        return None, _model
+    try:
+        _client = OpenAI(api_key=api_key, base_url=_base_url)
+        return _client, _model
+    except Exception as e:
+        logging.warning(f"根据本地配置恢复 API Client 失败: {e}")
+        _client = None
+        return None, _model
 
 
 def get_client() -> OpenAI | None:
     """返回当前客户端（供测试等使用）。"""
     return _client
+
+
+def get_current_model() -> str:
+    """返回当前使用的模型名称。"""
+    return _model or DEFAULT_MODEL
+
+
+def get_current_base_url() -> str:
+    """返回当前使用的 base_url。"""
+    return _base_url or DEFAULT_BASE_URL
 
 
 def call_model(prompt: str, max_retries: int = 3) -> str:
@@ -39,7 +95,7 @@ def call_model(prompt: str, max_retries: int = 3) -> str:
     for attempt in range(max_retries):
         try:
             resp = _client.chat.completions.create(
-                model="deepseek-chat",
+                model=_model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0,
             )

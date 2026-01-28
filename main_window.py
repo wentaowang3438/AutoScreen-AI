@@ -31,12 +31,18 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QScrollArea,
     QSplitter,
-    QSizePolicy,
 )
-from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QTimer
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QShortcut, QKeySequence
 
-from config import TEMPLATE_DIR, load_api_key
+from config import (
+    TEMPLATE_DIR,
+    DEFAULT_BASE_URL,
+    DEFAULT_MODEL,
+    load_api_profile,
+    load_current_profile_id,
+    save_api_profile,
+)
 from api import init_client
 from widgets import CustomTitleBar, QEditTextLogger
 from workers import Worker, ApiTestThread
@@ -45,6 +51,28 @@ from workers import Worker, ApiTestThread
 LEFT_PANEL_WIDTH = 320
 LEFT_PANEL_MIN = 260
 LEFT_PANEL_MAX = 460
+
+# 支持的 API 平台 / 模型配置
+API_PROFILES = [
+    {
+        "id": "deepseek-chat",
+        "label": "DeepSeek 官方 (deepseek-chat)",
+        "base_url": DEFAULT_BASE_URL,
+        "model": DEFAULT_MODEL,
+    },
+    {
+        "id": "siliconflow-glm-4.7",
+        "label": "SiliconFlow · GLM-4.7",
+        "base_url": "https://api.siliconflow.cn/v1",
+        "model": "Pro/zai-org/GLM-4.7",
+    },
+    {
+        "id": "siliconflow-deepseek-r1-qwen-7b",
+        "label": "SiliconFlow · DeepSeek-R1-Distill-Qwen-7B",
+        "base_url": "https://api.siliconflow.cn/v1",
+        "model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+    },
+]
 
 # 默认 Prompt 模板（文献筛选示例）
 DEFAULT_PROMPT = (
@@ -104,10 +132,28 @@ class MainWindow(QMainWindow):
 
         self.log_handler.log_signal.connect(self.append_log)
 
-        key = load_api_key()
-        if key:
-            self.api_key_edit.setText(key)
-            self.append_log("已自动加载保存的 API Key")
+        # === 从本地配置恢复当前 profile 与对应的 API Key ===
+        if hasattr(self, "api_profile_combo"):
+            # 1) 先确定当前 profile id
+            current_id = load_current_profile_id(API_PROFILES[0]["id"])
+            current_index = 0
+            for i, profile in enumerate(API_PROFILES):
+                if profile["id"] == current_id:
+                    current_index = i
+                    break
+            self.api_profile_combo.setCurrentIndex(current_index)
+
+            # 2) 读取该 profile 的配置并填充 API Key
+            profile = API_PROFILES[current_index]
+            cfg = load_api_profile(
+                profile_id=profile["id"],
+                default_base_url=profile["base_url"],
+                default_model=profile["model"],
+            )
+            key = cfg.get("api_key") or ""
+            if key:
+                self.api_key_edit.setText(key)
+                self.append_log(f"已为 {profile['label']} 自动加载保存的 API Key")
 
         if hasattr(self, "status_icon"):
             self.update_status_icon("ready")
@@ -201,13 +247,25 @@ class MainWindow(QMainWindow):
         api_box = QGroupBox("🔑 API 配置")
         api_layout = QVBoxLayout()
         api_layout.setSpacing(6)
+
+        # 平台与模型选择
+        api_layout.addWidget(QLabel("平台与模型"))
+        self.api_profile_combo = QComboBox()
+        self.api_profile_combo.setMinimumWidth(220)
+        self.api_profile_combo.setToolTip("选择调用的平台与模型，例如 DeepSeek 或 SiliconFlow")
+        for profile in API_PROFILES:
+            # itemData 存 profile_id，具体 base_url 和 model 从 API_PROFILES 中查
+            self.api_profile_combo.addItem(profile["label"], profile["id"])
+        api_layout.addWidget(self.api_profile_combo)
+
+        # API Key
         api_layout.addWidget(QLabel("API Key"))
         api_key_row = QHBoxLayout()
         self.api_key_edit = QLineEdit()
         self.api_key_edit.setEchoMode(QLineEdit.Password)
         self.api_key_edit.setPlaceholderText("sk-...（必填）")
         self.api_key_edit.setToolTip(
-            "DeepSeek API Key，格式 sk-xxx\n在 https://platform.deepseek.com 获取"
+            "平台提供的 API Key，例如 DeepSeek 或 SiliconFlow 控制台生成的密钥"
         )
         self.api_key_edit.setMinimumHeight(28)
         self._api_key_visible = False
@@ -219,11 +277,13 @@ class MainWindow(QMainWindow):
         api_key_row.addWidget(self.api_key_edit)
         api_key_row.addWidget(self.api_key_toggle_btn)
         api_layout.addLayout(api_key_row)
+
         self.test_api_btn = QPushButton("测试连接")
         self.test_api_btn.setObjectName("PrimaryBtn")
-        self.test_api_btn.setToolTip("验证 API Key 是否可用")
+        self.test_api_btn.setToolTip("验证当前平台和模型下 API Key 是否可用")
         self.test_api_btn.clicked.connect(self.test_api)
         api_layout.addWidget(self.test_api_btn)
+
         api_box.setLayout(api_layout)
         left_content_layout.addWidget(api_box)
 
@@ -588,12 +648,41 @@ class MainWindow(QMainWindow):
         except (AttributeError, RuntimeError):
             pass
 
+    # ===== API Profile & Client =====
+
+    def _get_current_profile(self) -> dict:
+        """
+        根据下拉框当前选择，返回对应的 profile dict。
+        """
+        if not hasattr(self, "api_profile_combo"):
+            return API_PROFILES[0]
+        idx = self.api_profile_combo.currentIndex()
+        if idx < 0 or idx >= len(API_PROFILES):
+            return API_PROFILES[0]
+        return API_PROFILES[idx]
+
     def get_client(self):
         api_key = self.api_key_edit.text().strip()
         if not api_key:
             QMessageBox.warning(self, "提示", "请先输入 API Key")
             return None
-        return init_client(api_key)
+
+        profile = self._get_current_profile()
+        base_url = profile["base_url"]
+        model = profile["model"]
+
+        # 初始化 client
+        client = init_client(api_key, base_url=base_url, model=model)
+
+        # 将该 profile 的配置（尤其是 key）单独保存，供下次自动恢复
+        save_api_profile(
+            profile_id=profile["id"],
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            set_current=True,
+        )
+        return client
 
     def test_api(self):
         c = self.get_client()
