@@ -2,18 +2,19 @@
 应用全局 QSS - 简约精致浅色
 - 轻边框、小圆角、适度留白、字重克制
 """
-_BG = "#ffffff"
-_SURFACE = "#fafafa"
-_BORDER = "#f1f5f9"
-_BORDER_FOCUS = "#e2e8f0"
+# 主背景与表面：浅灰降低刺眼感，保持层次
+_BG = "#f4f4f5"
+_SURFACE = "#eef0f2"
+_BORDER = "#e4e7eb"
+_BORDER_FOCUS = "#d1d5db"
 _TEXT = "#0f172a"
 _MUTED = "#64748b"
 _PRIMARY = "#2563eb"
 _CTA = "#16a34a"
 _SUCCESS = "#16a34a"
 _DANGER = "#dc2626"
-_HOVER_BG = "#f8fafc"
-_INPUT_BG = "#ffffff"
+_HOVER_BG = "#e8eaed"
+_INPUT_BG = "#fafafa"
 _DISABLED = "#94a3b8"
 _SELECTION = "#eff6ff"
 
@@ -50,32 +51,46 @@ QMainWindow {{ background-color: transparent; }}
     letter-spacing: 0.02em;
 }}
 
+/* 标题栏窗口控制：极简线条风格，统一中灰图标、扁平 */
 #TitleBtn {{
     background: transparent;
     border: none;
-    border-radius: 6px;
+    border-radius: 4px;
     color: {_MUTED};
-    font-weight: 500;
-    font-size: 9px;
-    min-width: 32px;
-    min-height: 32px;
+    font-weight: 400;
+    font-size: 12px;
+    min-width: 28px;
+    min-height: 28px;
+    max-width: 28px;
+    max-height: 28px;
+    padding: 0;
 }}
 #TitleBtn:hover {{
     background-color: {_HOVER_BG};
     color: {_TEXT};
 }}
+#TitleBtn:pressed {{
+    background-color: {_BORDER};
+}}
 #TitleBtn_Close {{
     background: transparent;
     border: none;
-    border-radius: 6px;
+    border-radius: 4px;
     color: {_MUTED};
-    font-weight: 500;
-    min-width: 32px;
-    min-height: 32px;
+    font-weight: 400;
+    font-size: 12px;
+    min-width: 28px;
+    min-height: 28px;
+    max-width: 28px;
+    max-height: 28px;
+    padding: 0;
 }}
 #TitleBtn_Close:hover {{
-    background-color: #fef2f2;
-    color: {_DANGER};
+    background-color: {_HOVER_BG};
+    color: {_TEXT};
+}}
+#TitleBtn_Close:pressed {{
+    background-color: {_BORDER};
 }}
 
 QGroupBox {{

@@ -453,7 +453,7 @@ class MainWindow(QMainWindow):
         control_frame = QFrame()
         control_frame.setObjectName("ControlFrame")
         control_frame.setStyleSheet(
-            "QFrame#ControlFrame { background-color: #fafafa; border-radius: 8px; padding: 10px 14px; border: 1px solid #f1f5f9; }"
+            "QFrame#ControlFrame { background-color: #eef0f2; border-radius: 8px; padding: 10px 14px; border: 1px solid #e4e7eb; }"
         )
         c_layout = QVBoxLayout(control_frame)
         c_layout.setSpacing(8)
