@@ -3,15 +3,15 @@
 """
 import time
 
-from PySide6.QtCore import QThread, Signal
+from PyQt5.QtCore import QThread, pyqtSignal
 
 from api import run_processing, get_current_model
 
 
 class Worker(QThread):
-    progress = Signal(int, int, float)
-    log_signal = Signal(str)
-    finished = Signal(bool, str)
+    progress = pyqtSignal(int, int, float)
+    log_signal = pyqtSignal(str)
+    finished = pyqtSignal(bool, str)
 
     def __init__(self, input_path, cols, delimiter, output_path, prompt, max_workers=20):
         super().__init__()
@@ -56,7 +56,7 @@ class Worker(QThread):
 
 
 class ApiTestThread(QThread):
-    finished = Signal(bool, str)
+    finished = pyqtSignal(bool, str)
 
     def __init__(self, client_obj):
         super().__init__()

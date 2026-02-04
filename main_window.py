@@ -8,7 +8,7 @@ import json
 import time
 import logging
 
-from PySide6.QtWidgets import (
+from PyQt5.QtWidgets import (
     QMainWindow,
     QWidget,
     QVBoxLayout,
@@ -32,9 +32,10 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSplitter,
     QSpinBox,
+    QShortcut,
 )
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QShortcut, QKeySequence
+from PyQt5.QtCore import Qt, QEvent
+from PyQt5.QtGui import QColor, QKeySequence
 
 from config import (
     TEMPLATE_DIR,
@@ -110,8 +111,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowFlags(Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.resize(1100, 750)
-        self.setMinimumSize(720, 520)
+        self.resize(960, 640)
+        self.setMinimumSize(640, 420)
 
         os.makedirs(TEMPLATE_DIR, exist_ok=True)
 
@@ -163,9 +164,9 @@ class MainWindow(QMainWindow):
             self.update_status_icon("ready")
 
     def changeEvent(self, event):
-        if event.type() == event.Type.WindowStateChange and hasattr(self, "title_bar"):
+        if event.type() == QEvent.WindowStateChange and hasattr(self, "title_bar"):
             self.title_bar.update_max_button()
-        super().changeEvent(event)
+        super(MainWindow, self).changeEvent(event)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -224,7 +225,7 @@ class MainWindow(QMainWindow):
         main_v_layout.addWidget(content_widget)
 
         main_layout = QHBoxLayout(content_widget)
-        main_layout.setContentsMargins(16, 8, 16, 16)
+        main_layout.setContentsMargins(12, 8, 12, 12)
         main_layout.setSpacing(0)
 
         # 左侧边栏（可折叠、可拖拽分割）
@@ -244,11 +245,11 @@ class MainWindow(QMainWindow):
 
         self.left_content = QWidget()
         left_content_layout = QVBoxLayout(self.left_content)
-        left_content_layout.setContentsMargins(4, 0, 8, 8)
-        left_content_layout.setSpacing(12)
+        left_content_layout.setContentsMargins(4, 2, 6, 6)
+        left_content_layout.setSpacing(10)
 
         # 1) API 配置
-        api_box = QGroupBox("🔑 API 配置")
+        api_box = QGroupBox("API 配置")
         api_layout = QVBoxLayout()
         api_layout.setSpacing(6)
 
@@ -272,11 +273,11 @@ class MainWindow(QMainWindow):
         self.api_key_edit.setToolTip(
             "平台提供的 API Key，例如 DeepSeek 或 SiliconFlow 控制台生成的密钥"
         )
-        self.api_key_edit.setMinimumHeight(28)
+        self.api_key_edit.setMinimumHeight(24)
         self._api_key_visible = False
         self.api_key_toggle_btn = QPushButton("显示")
         self.api_key_toggle_btn.setObjectName("SmallBtn")
-        self.api_key_toggle_btn.setFixedWidth(44)
+        self.api_key_toggle_btn.setFixedWidth(36)
         self.api_key_toggle_btn.setToolTip("切换显示/隐藏 API Key")
         self.api_key_toggle_btn.clicked.connect(self._toggle_api_key_visibility)
         api_key_row.addWidget(self.api_key_edit)
@@ -289,7 +290,7 @@ class MainWindow(QMainWindow):
         self.test_api_btn.clicked.connect(self.test_api)
         api_layout.addWidget(self.test_api_btn)
 
-        self.clear_api_btn = QPushButton("🗑 清除保存的 API")
+        self.clear_api_btn = QPushButton("清除保存的 API")
         self.clear_api_btn.setObjectName("DangerBtn")
         self.clear_api_btn.setToolTip("清除当前平台保存的 API Key")
         self.clear_api_btn.clicked.connect(self.clear_saved_api)
@@ -314,7 +315,7 @@ class MainWindow(QMainWindow):
         left_content_layout.addWidget(api_box)
 
         # 2) 数据源
-        file_box = QGroupBox("📂 数据源")
+        file_box = QGroupBox("数据源")
         file_layout = QVBoxLayout()
         file_layout.setSpacing(6)
         file_layout.addWidget(QLabel("输入 Excel"))
@@ -323,10 +324,10 @@ class MainWindow(QMainWindow):
         self.input_edit.setReadOnly(True)
         self.input_edit.setPlaceholderText("未选择")
         self.input_edit.setToolTip("支持 .xlsx / .xls")
-        self.input_edit.setMinimumHeight(28)
+        self.input_edit.setMinimumHeight(24)
         btn_in = QPushButton("…")
         btn_in.setObjectName("SmallBtn")
-        btn_in.setFixedWidth(36)
+        btn_in.setFixedWidth(30)
         btn_in.setToolTip("选择文件 (Ctrl+O)")
         btn_in.clicked.connect(self.choose_input)
         h1.addWidget(self.input_edit)
@@ -336,10 +337,10 @@ class MainWindow(QMainWindow):
         h2 = QHBoxLayout()
         self.output_edit = QLineEdit("output.xlsx")
         self.output_edit.setToolTip("结果将写入该文件，并增加 AI_Output 列")
-        self.output_edit.setMinimumHeight(28)
+        self.output_edit.setMinimumHeight(24)
         btn_out = QPushButton("…")
         btn_out.setObjectName("SmallBtn")
-        btn_out.setFixedWidth(36)
+        btn_out.setFixedWidth(30)
         btn_out.setToolTip("选择保存位置")
         btn_out.clicked.connect(self.choose_output)
         h2.addWidget(self.output_edit)
@@ -364,7 +365,7 @@ class MainWindow(QMainWindow):
         file_layout.addLayout(col_header)
         self.col_list = QListWidget()
         self.col_list.setSelectionMode(QListWidget.NoSelection)
-        self.col_list.setMinimumHeight(80)
+        self.col_list.setMinimumHeight(72)
         self.col_list.setToolTip("勾选要参与合并的列，多选")
         self.col_list.itemChanged.connect(self._on_col_selection_changed)
         file_layout.addWidget(self.col_list)
@@ -392,7 +393,7 @@ class MainWindow(QMainWindow):
 
         prompt_tab = QWidget()
         p_layout = QVBoxLayout(prompt_tab)
-        p_layout.setSpacing(10)
+        p_layout.setSpacing(8)
         prompt_header = QHBoxLayout()
         prompt_header.addWidget(
             QLabel("Prompt 模板（占位符: {merged_text}、{delimiter}）")
@@ -414,12 +415,12 @@ class MainWindow(QMainWindow):
         self.template_combo.currentIndexChanged.connect(self.on_template_selected)
         self._template_loading = False
         template_header.addWidget(self.template_combo)
-        self.save_template_btn = QPushButton("💾 保存模板")
+        self.save_template_btn = QPushButton("保存模板")
         self.save_template_btn.setObjectName("PrimaryBtn")
         self.save_template_btn.setToolTip("将当前 Prompt 保存为模板")
         self.save_template_btn.clicked.connect(self.save_prompt_template)
         template_header.addWidget(self.save_template_btn)
-        self.delete_template_btn = QPushButton("🗑 删除")
+        self.delete_template_btn = QPushButton("删除")
         self.delete_template_btn.setObjectName("DangerBtn")
         self.delete_template_btn.setToolTip("删除选中的模板")
         self.delete_template_btn.clicked.connect(self.delete_prompt_template)
@@ -432,7 +433,7 @@ class MainWindow(QMainWindow):
         self.prompt_edit.setToolTip(
             "输入 AI Prompt 模板\n使用 {merged_text} 占位符表示合并后的列内容\n使用 {delimiter} 占位符表示输出分隔符"
         )
-        self.prompt_edit.setMinimumHeight(140)
+        self.prompt_edit.setMinimumHeight(100)
         self.prompt_edit.setPlainText(DEFAULT_PROMPT)
         p_layout.addWidget(self.prompt_edit)
 
@@ -440,44 +441,44 @@ class MainWindow(QMainWindow):
         l_layout = QVBoxLayout(log_tab)
         self.log_console = QTextEdit()
         self.log_console.setReadOnly(True)
-        self.log_console.setMinimumHeight(120)
-        self.log_console.setStyleSheet("font-family: Consolas, monospace; font-size: 12px;")
+        self.log_console.setMinimumHeight(88)
+        self.log_console.setStyleSheet("font-family: 'Fira Code', 'Consolas', monospace; font-size: 9px; color: #334155;")
         l_layout.addWidget(self.log_console)
 
-        self.tabs.addTab(prompt_tab, "📝 Prompt")
-        self.tabs.addTab(log_tab, "📟 日志")
-        self.tabs.setMinimumHeight(200)
+        self.tabs.addTab(prompt_tab, "Prompt")
+        self.tabs.addTab(log_tab, "日志")
+        self.tabs.setMinimumHeight(160)
         right_layout.addWidget(self.tabs)
 
         control_frame = QFrame()
         control_frame.setObjectName("ControlFrame")
         control_frame.setStyleSheet(
-            "QFrame#ControlFrame { background-color: #f8fafc; border-radius: 8px; padding: 12px 14px; border: 1px solid #e2e8f0; }"
+            "QFrame#ControlFrame { background-color: #fafafa; border-radius: 8px; padding: 10px 14px; border: 1px solid #f1f5f9; }"
         )
         c_layout = QVBoxLayout(control_frame)
-        c_layout.setSpacing(10)
+        c_layout.setSpacing(8)
 
         info_layout = QHBoxLayout()
-        info_layout.setSpacing(10)
-        info_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        self.status_icon = QLabel("\u2713")  # ✓
+        info_layout.setSpacing(8)
+        info_layout.setAlignment(Qt.AlignVCenter)
+        self.status_icon = QLabel("\u2713")
         self.status_icon.setObjectName("StatusIcon")
-        self.status_icon.setFixedSize(28, 28)
-        self.status_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_icon.setFixedSize(24, 24)
+        self.status_icon.setAlignment(Qt.AlignCenter)
         self.status_icon.setStyleSheet(
-            "font-size: 16px; font-weight: bold; color: #16a34a;"
-            " background-color: #dcfce7; border-radius: 14px;"
+            "font-size: 10px; font-weight: 500; color: #16a34a;"
+            " background-color: #dcfce7; border-radius: 12px;"
         )
         self.status_icon.setToolTip("状态指示")
         info_layout.addWidget(self.status_icon)
         self.status_label = QLabel("准备就绪 \u00B7 请先配置 API、选择文件与列")
-        self.status_label.setStyleSheet("font-weight: bold; color: #64748b; font-size: 13px;")
+        self.status_label.setStyleSheet("font-family: 'Fira Sans', 'Microsoft YaHei UI', sans-serif; font-weight: 500; color: #64748b; font-size: 10px;")
         self.status_label.setToolTip("当前状态与下一步提示")
         info_layout.addWidget(self.status_label)
         info_layout.addStretch()
         self.eta_label = QLabel("\u2014\u2014:\u2014\u2014")  # --:--
-        self.eta_label.setStyleSheet("font-family: Consolas, monospace; font-size: 13px; color: #64748b; min-width: 72px;")
-        self.eta_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.eta_label.setStyleSheet("font-family: 'Fira Code', 'Consolas', monospace; font-size: 9px; color: #64748b; min-width: 72px;")
+        self.eta_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.eta_label.setToolTip("预计剩余时间")
         info_layout.addWidget(self.eta_label)
         c_layout.addLayout(info_layout)
@@ -487,20 +488,20 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(0)
         self.progress_bar.setTextVisible(True)
         self.progress_bar.setFormat("%p%")
-        self.progress_bar.setFixedHeight(22)
+        self.progress_bar.setFixedHeight(14)
         self.progress_bar.setToolTip("显示处理进度")
         c_layout.addWidget(self.progress_bar)
 
         btn_layout = QHBoxLayout()
-        btn_layout.setSpacing(12)
-        self.start_btn = QPushButton("\u25B6 开始批量处理")
+        btn_layout.setSpacing(8)
+        self.start_btn = QPushButton("开始批量处理")
         self.start_btn.setObjectName("SuccessBtn")
-        self.start_btn.setFixedHeight(44)
+        self.start_btn.setFixedHeight(30)
         self.start_btn.setToolTip("开始处理 (F5)")
         self.start_btn.clicked.connect(self.start_processing)
-        self.stop_btn = QPushButton("\u25A0 停止")
+        self.stop_btn = QPushButton("停止")
         self.stop_btn.setObjectName("DangerBtn")
-        self.stop_btn.setFixedHeight(44)
+        self.stop_btn.setFixedHeight(30)
         self.stop_btn.setEnabled(False)
         self.stop_btn.setToolTip("停止当前任务")
         self.stop_btn.clicked.connect(self.stop_processing)
@@ -517,6 +518,12 @@ class MainWindow(QMainWindow):
 
         self.size_grip = QSizeGrip(self.main_frame)
         self.size_grip.setObjectName("SizeGrip")
+
+        # 设计系统: 所有可点击元素手型光标 (MASTER: cursor-pointer)
+        for btn in self.main_frame.findChildren(QPushButton):
+            btn.setCursor(Qt.PointingHandCursor)
+        for w in [self.api_profile_combo, self.template_combo, self.col_list]:
+            w.setCursor(Qt.PointingHandCursor)
 
         self._setup_shortcuts()
 
@@ -684,9 +691,9 @@ class MainWindow(QMainWindow):
             self,
             "确认删除",
             f"确定要删除模板 '{template_name}' 吗？",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.Yes | QMessageBox.No,
         )
-        if reply == QMessageBox.StandardButton.Yes:
+        if reply == QMessageBox.Yes:
             filepath = os.path.join(TEMPLATE_DIR, filename)
             try:
                 if os.path.exists(filepath):
@@ -771,9 +778,9 @@ class MainWindow(QMainWindow):
             self,
             "确认清除",
             f"确定要清除 {profile['label']} 保存的 API Key 吗？\n清除后需要重新输入 API Key。",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.Yes | QMessageBox.No,
         )
-        if reply == QMessageBox.StandardButton.Yes:
+        if reply == QMessageBox.Yes:
             try:
                 clear_api_profile(profile["id"])
                 self.api_key_edit.clear()
@@ -898,22 +905,22 @@ class MainWindow(QMainWindow):
             self.append_log("正在请求停止任务...")
         elif hasattr(self, "stop_btn"):
             self.stop_btn.setEnabled(False)
-            self.stop_btn.setText("\u25A0 停止")
+            self.stop_btn.setText("停止")
 
     def update_status_icon(self, status):
         if not hasattr(self, "status_icon"):
             return
         config = {
-            "ready": ("\u2713", "#16a34a", "#dcfce7"),      # ✓ 绿字 浅绿底
-            "processing": ("\u23F3", "#0284c7", "#e0f2fe"),  # ⏳ 蓝字 浅蓝底
-            "success": ("\u2713", "#16a34a", "#dcfce7"),     # ✓ 绿字 浅绿底
-            "error": ("\u2717", "#dc2626", "#fee2e2"),       # ✗ 红字 浅红底
+            "ready": ("\u2713", "#16a34a", "#dcfce7"),
+            "processing": ("\u23F3", "#2563eb", "#dbeafe"),
+            "success": ("\u2713", "#16a34a", "#dcfce7"),
+            "error": ("\u2717", "#dc2626", "#fee2e2"),
         }
-        icon, color, bg = config.get(status, ("\u2713", "#64748b", "#f1f5f9"))
+        icon, color, bg = config.get(status, ("\u2713", "#475569", "#f1f5f9"))
         self.status_icon.setText(icon)
         self.status_icon.setStyleSheet(
-            f"font-size: 16px; font-weight: bold; color: {color};"
-            f" background-color: {bg}; border-radius: 14px;"
+            f"font-size: 10px; font-weight: 500; color: {color};"
+            f" background-color: {bg}; border-radius: 12px;"
         )
 
     def on_progress(self, done, total, eta):
@@ -940,7 +947,7 @@ class MainWindow(QMainWindow):
                 self.start_btn.setEnabled(True)
             if hasattr(self, "stop_btn"):
                 self.stop_btn.setEnabled(False)
-                self.stop_btn.setText("\u25A0 停止")
+                self.stop_btn.setText("停止")
             if hasattr(self, "status_label"):
                 self.status_label.setText("任务结束")
             if hasattr(self, "eta_label"):
@@ -948,15 +955,15 @@ class MainWindow(QMainWindow):
             if ok:
                 self.update_status_icon("success")
                 QMessageBox.information(self, "完成", msg)
-                self.append_log(f"✅ {msg}")
+                self.append_log(f"[完成] {msg}")
             else:
                 if "用户中断" in msg:
                     self.update_status_icon("ready")
                     QMessageBox.warning(self, "中断", msg)
-                    self.append_log(f"⚠️ {msg}")
+                    self.append_log(f"[中断] {msg}")
                 else:
                     self.update_status_icon("error")
                     QMessageBox.critical(self, "错误", msg)
-                    self.append_log(f"❌ {msg}")
+                    self.append_log(f"[错误] {msg}")
         except (AttributeError, RuntimeError):
             pass
