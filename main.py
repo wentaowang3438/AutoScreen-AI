@@ -37,7 +37,7 @@ _setup_qt_plugin_path()
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt
 
-from styles import STYLESHEET
+from styles import get_stylesheet
 from main_window import MainWindow
 
 
@@ -49,7 +49,14 @@ def main():
     except AttributeError:
         pass
     app = QApplication(sys.argv)
-    app.setStyleSheet(STYLESHEET)
+    # 按 DPI/缩放比例动态放大字号（4K 等高分屏）
+    try:
+        screen = app.primaryScreen()
+        dpi = screen.logicalDpiX() if screen else 96
+        scale = max(1.0, min(2.0, dpi / 96.0))
+        app.setStyleSheet(get_stylesheet(scale))
+    except Exception:
+        app.setStyleSheet(get_stylesheet(1.0))
     window = MainWindow()
     window.show()
     return sys.exit(app.exec_())

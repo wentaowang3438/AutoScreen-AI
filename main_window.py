@@ -35,8 +35,8 @@ from PyQt5.QtWidgets import (
     QShortcut,
     QMenu,
 )
-from PyQt5.QtCore import Qt, QEvent
-from PyQt5.QtGui import QKeySequence
+from PyQt5.QtCore import Qt, QEvent, QRect, QPoint, QSettings, QByteArray
+from PyQt5.QtGui import QKeySequence, QCursor
 
 from config import (
     TEMPLATE_DIR,
@@ -56,6 +56,16 @@ from workers import Worker, ApiTestThread
 LEFT_PANEL_WIDTH = 320
 LEFT_PANEL_MIN = 260
 LEFT_PANEL_MAX = 460
+
+# 窗口：在 2600×1600 下合适的默认尺寸；不同显示器按可用区域适配
+PREFERRED_WIDTH = 960
+PREFERRED_HEIGHT = 640
+MIN_WIDTH = 640
+MIN_HEIGHT = 420
+# 无边框窗口边缘拖拽调节大小时的检测宽度（像素）；底部/顶部略大便于触发上下
+RESIZE_MARGIN = 8
+RESIZE_MARGIN_BOTTOM = 12
+RESIZE_MARGIN_TOP = 10
 
 # 硅基流动 API 配置（模型名可在界面中修改，如 THUDM/GLM-4-9B-0414）
 SILICONFLOW_PROFILE = {
@@ -97,8 +107,12 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowFlags(Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.resize(960, 640)
-        self.setMinimumSize(640, 420)
+        self.setMinimumSize(MIN_WIDTH, MIN_HEIGHT)
+
+        # 边缘拖拽调节大小状态
+        self._resize_edge = None  # None | 'left'|'right'|'bottom'|'bottom-left'|'bottom-right'
+        self._resize_start_pos = None  # QPoint global
+        self._resize_start_geometry = None  # QRect
 
         os.makedirs(TEMPLATE_DIR, exist_ok=True)
 
@@ -113,6 +127,14 @@ class MainWindow(QMainWindow):
         self.api_test_thread = None
 
         self.setup_ui()
+
+        # 应用级事件过滤：在任意子控件上也能检测窗口边缘并拖拽调节大小
+        app = QApplication.instance()
+        if app:
+            app.installEventFilter(self)
+
+        self._apply_screen_adaptive_geometry()
+        self._restore_splitter_state()
 
         self.log_handler.log_signal.connect(self.append_log)
 
@@ -135,6 +157,193 @@ class MainWindow(QMainWindow):
         if event.type() == QEvent.WindowStateChange and hasattr(self, "title_bar"):
             self.title_bar.update_max_button()
         super(MainWindow, self).changeEvent(event)
+
+    def _get_available_geometry(self):
+        """获取当前/主屏可用区域（扣除任务栏等）。"""
+        app = QApplication.instance()
+        if not app:
+            return QRect(0, 0, 1920, 1080)
+        screen = app.primaryScreen()
+        if not screen:
+            return QRect(0, 0, 1920, 1080)
+        return screen.availableGeometry()
+
+    def _geometry_fits_screen(self, rect):
+        """检查 rect 是否与任意屏幕有交集（避免窗口完全在屏外）。"""
+        app = QApplication.instance()
+        if not app:
+            return True
+        for screen in app.screens():
+            if screen.availableGeometry().intersects(rect):
+                return True
+        return False
+
+    def _apply_screen_adaptive_geometry(self):
+        """按屏幕适配：优先恢复上次几何，否则用首选尺寸并居中。"""
+        settings = QSettings("AutoScreen-AI", "MainWindow")
+        saved = settings.value("geometry")
+        if saved and isinstance(saved, (bytes, QByteArray)):
+            try:
+                if isinstance(saved, bytes):
+                    saved = QByteArray(saved)
+                if self.restoreGeometry(saved):
+                    if not self._geometry_fits_screen(self.geometry()):
+                        self._set_default_geometry_centered()
+                    else:
+                        state = settings.value("windowState")
+                        if state and isinstance(state, (bytes, QByteArray)):
+                            if isinstance(state, bytes):
+                                state = QByteArray(state)
+                            self.restoreState(state)
+                    return
+            except Exception:
+                pass
+        self._set_default_geometry_centered()
+
+    def _set_default_geometry_centered(self):
+        """按当前屏幕设置默认尺寸并居中（适配 2600×1600 及更小/更大屏）。"""
+        available = self._get_available_geometry()
+        w = max(MIN_WIDTH, min(PREFERRED_WIDTH, int(0.9 * available.width())))
+        h = max(MIN_HEIGHT, min(PREFERRED_HEIGHT, int(0.9 * available.height())))
+        x = available.x() + (available.width() - w) // 2
+        y = available.y() + (available.height() - h) // 2
+        self.setGeometry(x, y, w, h)
+
+    def _save_geometry_state(self):
+        """保存窗口几何、状态与分割器比例。"""
+        try:
+            settings = QSettings("AutoScreen-AI", "MainWindow")
+            settings.setValue("geometry", self.saveGeometry())
+            settings.setValue("windowState", self.saveState())
+            if hasattr(self, "main_splitter") and self.main_splitter:
+                sizes = self.main_splitter.sizes()
+                settings.setValue("splitterSizes", sizes)
+        except Exception:
+            pass
+
+    def _restore_splitter_state(self):
+        """恢复分割器比例。"""
+        try:
+            settings = QSettings("AutoScreen-AI", "MainWindow")
+            sizes = settings.value("splitterSizes")
+            if sizes and hasattr(self, "main_splitter") and self.main_splitter:
+                if isinstance(sizes, (list, tuple)) and len(sizes) >= 2:
+                    self.main_splitter.setSizes([int(sizes[0]), int(sizes[1])])
+        except Exception:
+            pass
+
+    def _hit_test_resize_edge(self, pos_in_window):
+        """根据窗口内坐标返回当前处于的调节边/角。pos_in_window 为 QPoint。"""
+        w, h = self.width(), self.height()
+        x, y = pos_in_window.x(), pos_in_window.y()
+        m = RESIZE_MARGIN
+        mb = RESIZE_MARGIN_BOTTOM
+        mt = RESIZE_MARGIN_TOP
+        left = x <= m
+        right = x >= w - m
+        bottom = y >= h - mb
+        top = y <= mt
+        if top and left:
+            return "top-left"
+        if top and right:
+            return "top-right"
+        if bottom and left:
+            return "bottom-left"
+        if bottom and right:
+            return "bottom-right"
+        if left:
+            return "left"
+        if right:
+            return "right"
+        if top:
+            return "top"
+        if bottom:
+            return "bottom"
+        return None
+
+    def eventFilter(self, obj, event):
+        """应用级过滤：仅处理本窗口内鼠标事件，实现边缘拖拽调节大小。"""
+        if obj != self:
+            if not isinstance(obj, QWidget) or not self.isAncestorOf(obj):
+                return super().eventFilter(obj, event)
+        etype = event.type()
+        if etype not in (QEvent.MouseButtonPress, QEvent.MouseButtonRelease, QEvent.MouseMove):
+            return super().eventFilter(obj, event)
+        if etype in (QEvent.MouseButtonPress, QEvent.MouseButtonRelease) and event.button() != Qt.LeftButton:
+            return super().eventFilter(obj, event)
+        if self.isMaximized():
+            return super().eventFilter(obj, event)
+        pos_in_window = self.mapFromGlobal(event.globalPos())
+        if etype == QEvent.MouseButtonPress:
+            edge = self._hit_test_resize_edge(pos_in_window)
+            if edge and not self._resize_start_pos:
+                self._resize_edge = edge
+                self._resize_start_pos = event.globalPos()
+                self._resize_start_geometry = self.geometry()
+                self.grabMouse()  # 确保后续 MouseMove/Release 都发到本窗口，否则底部/斜向拖拽会收不到
+                return True
+        elif etype == QEvent.MouseButtonRelease:
+            if self._resize_edge:
+                self.releaseMouse()
+                self._resize_edge = None
+                self._resize_start_pos = None
+                self._resize_start_geometry = None
+                return True
+        elif etype == QEvent.MouseMove:
+            if self._resize_start_pos is not None and self._resize_start_geometry is not None:
+                g = self._resize_start_geometry
+                cur = event.globalPos()
+                dx = cur.x() - self._resize_start_pos.x()
+                dy = cur.y() - self._resize_start_pos.y()
+                x, y, w, h = g.x(), g.y(), g.width(), g.height()
+                if self._resize_edge == "left":
+                    x += dx
+                    w -= dx
+                elif self._resize_edge == "right":
+                    w += dx
+                elif self._resize_edge == "bottom":
+                    h += dy
+                elif self._resize_edge == "top":
+                    y += dy
+                    h -= dy
+                elif self._resize_edge == "bottom-left":
+                    x += dx
+                    w -= dx
+                    h += dy
+                elif self._resize_edge == "bottom-right":
+                    w += dx
+                    h += dy
+                elif self._resize_edge == "top-left":
+                    x += dx
+                    w -= dx
+                    y += dy
+                    h -= dy
+                elif self._resize_edge == "top-right":
+                    w += dx
+                    y += dy
+                    h -= dy
+                w = max(MIN_WIDTH, w)
+                h = max(MIN_HEIGHT, h)
+                if self._resize_edge in ("left", "bottom-left", "top-left") and w < MIN_WIDTH:
+                    x = g.x() + g.width() - MIN_WIDTH
+                    w = MIN_WIDTH
+                if self._resize_edge in ("top", "top-left", "top-right") and h < MIN_HEIGHT:
+                    y = g.y() + g.height() - MIN_HEIGHT
+                    h = MIN_HEIGHT
+                self.setGeometry(x, y, w, h)
+                return True
+            edge = self._hit_test_resize_edge(pos_in_window)
+            if edge == "left" or edge == "right":
+                self.setCursor(Qt.SizeHorCursor)
+            elif edge == "bottom" or edge == "top":
+                self.setCursor(Qt.SizeVerCursor)
+            elif edge == "bottom-left" or edge == "top-right":
+                self.setCursor(Qt.SizeBDiagCursor)
+            elif edge == "bottom-right" or edge == "top-left":
+                self.setCursor(Qt.SizeFDiagCursor)
+            else:
+                self.unsetCursor()
+        return super().eventFilter(obj, event)
 
     def closeEvent(self, event):
         if hasattr(self, "worker") and self.worker and self.worker.isRunning():
@@ -163,9 +372,25 @@ class MainWindow(QMainWindow):
                 logging.getLogger().removeHandler(self.log_handler)
             except Exception:
                 pass
+        self._save_geometry_state()
         event.accept()
 
+    def _font_scale(self):
+        """与 styles.get_stylesheet(scale) 一致的 DPI 缩放比，用于内联 setStyleSheet 的字号。"""
+        try:
+            app = QApplication.instance()
+            if app and app.primaryScreen():
+                dpi = app.primaryScreen().logicalDpiX()
+                return max(1.0, min(2.0, dpi / 96.0))
+        except Exception:
+            pass
+        return 1.0
+
     def setup_ui(self):
+        scale = self._font_scale()
+        fs9 = max(8, round(9 * scale))
+        fs10 = max(9, round(10 * scale))
+
         self.main_frame = QFrame()
         self.main_frame.setObjectName("MainFrame")
         self.setCentralWidget(self.main_frame)
@@ -420,7 +645,7 @@ class MainWindow(QMainWindow):
         self.log_console = QTextEdit()
         self.log_console.setReadOnly(True)
         self.log_console.setMinimumHeight(88)
-        self.log_console.setStyleSheet("font-family: 'Fira Code', 'Consolas', monospace; font-size: 9px; color: #334155;")
+        self.log_console.setStyleSheet(f"font-family: 'Fira Code', 'Consolas', monospace; font-size: {fs9}px; color: #334155;")
         l_layout.addWidget(self.log_console)
 
         self.tabs.addTab(prompt_tab, "Prompt")
@@ -440,12 +665,12 @@ class MainWindow(QMainWindow):
         info_layout.setSpacing(8)
         info_layout.setAlignment(Qt.AlignVCenter)
         self.status_label = QLabel("准备就绪 · 请先配置 API、选择文件与列")
-        self.status_label.setStyleSheet("font-family: 'Fira Sans', 'Microsoft YaHei UI', sans-serif; font-weight: 500; color: #64748b; font-size: 10px;")
+        self.status_label.setStyleSheet(f"font-family: 'Fira Sans', 'Microsoft YaHei UI', sans-serif; font-weight: 500; color: #64748b; font-size: {fs10}px;")
         self.status_label.setToolTip("当前状态与下一步提示")
         info_layout.addWidget(self.status_label)
         info_layout.addStretch()
         self.eta_label = QLabel("\u2014\u2014:\u2014\u2014")  # --:--
-        self.eta_label.setStyleSheet("font-family: 'Fira Code', 'Consolas', monospace; font-size: 9px; color: #64748b; min-width: 72px;")
+        self.eta_label.setStyleSheet(f"font-family: 'Fira Code', 'Consolas', monospace; font-size: {fs9}px; color: #64748b; min-width: 72px;")
         self.eta_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.eta_label.setToolTip("预计剩余时间")
         info_layout.addWidget(self.eta_label)
@@ -456,7 +681,7 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(0)
         self.progress_bar.setTextVisible(True)
         self.progress_bar.setFormat("%p%")
-        self.progress_bar.setFixedHeight(14)
+        self.progress_bar.setFixedHeight(max(12, round(14 * scale)))
         self.progress_bar.setToolTip("显示处理进度")
         c_layout.addWidget(self.progress_bar)
 

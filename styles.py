@@ -1,6 +1,7 @@
 """
 应用全局 QSS - 简约精致浅色，对比度优化
 - 更深边框与次要文字，层次更清晰、可读性更好
+- get_stylesheet(scale) 支持按 DPI/缩放比例动态放大字号（4K 等高分屏）
 """
 # 主背景与表面：背景略深、表面与边框对比更强
 _BG = "#f0f2f5"
@@ -20,10 +21,22 @@ _SELECTION = "#dbeafe"
 
 _FONT = '"Fira Sans", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif'
 
-STYLESHEET = f"""
+
+def get_stylesheet(scale=1.0):
+    """
+    根据缩放比例生成 QSS。scale=1.0 为 96 DPI 基准；4K 高 DPI 下可传入 >1 以放大字号与控件高度。
+    """
+    scale = max(1.0, min(2.0, float(scale)))
+    fs10 = max(9, round(10 * scale))
+    fs9 = max(8, round(9 * scale))
+    mh28 = max(24, round(28 * scale))
+    mh14 = max(12, round(14 * scale))
+    mh32 = max(28, round(32 * scale))
+    sb = max(6, round(8 * scale))
+    return f"""
 QWidget {{
     color: {_TEXT};
-    font-size: 10px;
+    font-size: {fs10}px;
     font-family: {_FONT};
 }}
 
@@ -44,7 +57,7 @@ QMainWindow {{ background-color: transparent; }}
 
 #TitleLabel {{
     color: {_TEXT};
-    font-size: 10px;
+    font-size: {fs10}px;
     font-weight: 500;
     font-family: {_FONT};
     padding-left: 12px;
@@ -58,8 +71,8 @@ QMainWindow {{ background-color: transparent; }}
     border-radius: 4px;
     color: {_MUTED};
     font-weight: 400;
-    font-size: 10px;
-    min-height: 28px;
+    font-size: {fs10}px;
+    min-height: {mh28}px;
     padding: 0 8px;
 }}
 #TitleBtn:hover {{
@@ -75,8 +88,8 @@ QMainWindow {{ background-color: transparent; }}
     border-radius: 4px;
     color: {_MUTED};
     font-weight: 400;
-    font-size: 10px;
-    min-height: 28px;
+    font-size: {fs10}px;
+    min-height: {mh28}px;
     padding: 0 8px;
 }}
 #TitleBtn_Close:hover {{
@@ -96,7 +109,7 @@ QGroupBox {{
     background-color: transparent;
     font-weight: 500;
     color: {_MUTED};
-    font-size: 9px;
+    font-size: {fs9}px;
 }}
 QGroupBox::title {{
     subcontrol-origin: margin;
@@ -109,14 +122,14 @@ QGroupBox::title {{
 /* API 配置区：字段标签与内容层级 */
 QLabel#ApiFieldLabel {{
     color: {_MUTED};
-    font-size: 9px;
+    font-size: {fs9}px;
     font-weight: 500;
     letter-spacing: 0.02em;
     margin-bottom: 2px;
 }}
 QLabel#ApiFieldValue {{
     color: {_TEXT};
-    font-size: 10px;
+    font-size: {fs10}px;
     font-weight: 600;
 }}
 
@@ -128,7 +141,7 @@ QLineEdit, QTextEdit, QPlainTextEdit {{
     padding: 8px 10px;
     selection-background-color: {_SELECTION};
     min-height: 1.2em;
-    font-size: 10px;
+    font-size: {fs10}px;
 }}
 QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {{
     border: 1px solid {_PRIMARY};
@@ -167,7 +180,7 @@ QPushButton {{
     padding: 6px 12px;
     font-weight: 500;
     min-height: 1.2em;
-    font-size: 10px;
+    font-size: {fs10}px;
 }}
 QPushButton:hover {{
     background-color: {_HOVER_BG};
@@ -223,7 +236,7 @@ QPushButton#SuccessBtn:hover {{
 
 QPushButton#SmallBtn {{
     padding: 4px 8px;
-    font-size: 9px;
+    font-size: {fs9}px;
     font-weight: 500;
     min-height: 1.1em;
 }}
@@ -235,8 +248,8 @@ QProgressBar {{
     color: {_MUTED};
     background-color: {_SURFACE};
     font-weight: 500;
-    font-size: 9px;
-    min-height: 14px;
+    font-size: {fs9}px;
+    min-height: {mh14}px;
 }}
 QProgressBar::chunk {{
     background-color: {_PRIMARY};
@@ -257,7 +270,7 @@ QTabBar::tab {{
     padding: 8px 14px;
     margin-right: 4px;
     font-weight: 500;
-    font-size: 10px;
+    font-size: {fs10}px;
 }}
 QTabBar::tab:selected {{
     color: {_PRIMARY};
@@ -270,13 +283,13 @@ QTabBar::tab:hover:!selected {{
 QScrollBar:vertical {{
     border: none;
     background: transparent;
-    width: 8px;
+    width: {sb}px;
     margin: 0;
     border-radius: 4px;
 }}
 QScrollBar::handle:vertical {{
     background: {_BORDER};
-    min-height: 32px;
+    min-height: {mh32}px;
     border-radius: 4px;
 }}
 QScrollBar::handle:vertical:hover {{
@@ -289,13 +302,13 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
 QScrollBar:horizontal {{
     border: none;
     background: transparent;
-    height: 8px;
+    height: {sb}px;
     margin: 0;
     border-radius: 4px;
 }}
 QScrollBar::handle:horizontal {{
     background: {_BORDER};
-    min-width: 32px;
+    min-width: {mh32}px;
     border-radius: 4px;
 }}
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
@@ -313,13 +326,13 @@ QSplitter::handle:hover {{ background: {_MUTED}; }}
 
 QLabel#HintLabel {{
     color: {_MUTED};
-    font-size: 9px;
+    font-size: {fs9}px;
     font-weight: 400;
 }}
 
 QLabel#CountLabel {{
     color: {_MUTED};
-    font-size: 9px;
+    font-size: {fs9}px;
     font-weight: 400;
 }}
 
@@ -331,7 +344,7 @@ QComboBox {{
     padding: 8px 12px;
     selection-background-color: {_SELECTION};
     min-height: 1.3em;
-    font-size: 10px;
+    font-size: {fs10}px;
 }}
 QComboBox:hover {{ border: 1px solid {_BORDER_FOCUS}; }}
 QComboBox:focus {{ border: 1px solid {_PRIMARY}; }}
@@ -352,3 +365,7 @@ QComboBox QAbstractItemView {{
     selection-color: {_TEXT};
 }}
 """
+
+
+# 默认 1.0 缩放，兼容直接 import STYLESHEET 的用法
+STYLESHEET = get_stylesheet(1.0)
