@@ -4,11 +4,14 @@
 - API Key 显隐、列全选/取消全选、快捷键与状态提示
 """
 import os
+import sys
 import json
 import time
 import logging
+import subprocess
 
 from PyQt5.QtWidgets import (
+    QApplication,
     QMainWindow,
     QWidget,
     QVBoxLayout,
@@ -25,22 +28,18 @@ from PyQt5.QtWidgets import (
     QListWidgetItem,
     QFrame,
     QTabWidget,
-    QGraphicsDropShadowEffect,
-    QSizeGrip,
-    QComboBox,
     QInputDialog,
     QScrollArea,
     QSplitter,
     QSpinBox,
     QShortcut,
+    QMenu,
 )
 from PyQt5.QtCore import Qt, QEvent
-from PyQt5.QtGui import QColor, QKeySequence
+from PyQt5.QtGui import QKeySequence
 
 from config import (
     TEMPLATE_DIR,
-    DEFAULT_BASE_URL,
-    DEFAULT_MODEL,
     load_api_profile,
     load_current_profile_id,
     save_api_profile,
@@ -52,32 +51,19 @@ from api import init_client
 from widgets import CustomTitleBar, QEditTextLogger
 from workers import Worker, ApiTestThread
 
+
 # 布局常量，便于统一调整
 LEFT_PANEL_WIDTH = 320
 LEFT_PANEL_MIN = 260
 LEFT_PANEL_MAX = 460
 
-# 支持的 API 平台 / 模型配置
-API_PROFILES = [
-    {
-        "id": "deepseek-chat",
-        "label": "DeepSeek 官方 (deepseek-chat)",
-        "base_url": DEFAULT_BASE_URL,
-        "model": DEFAULT_MODEL,
-    },
-    {
-        "id": "siliconflow-glm-4.7",
-        "label": "SiliconFlow · GLM-4.7",
-        "base_url": "https://api.siliconflow.cn/v1",
-        "model": "Pro/zai-org/GLM-4.7",
-    },
-    {
-        "id": "siliconflow-deepseek-r1-qwen-7b",
-        "label": "SiliconFlow · DeepSeek-R1-Distill-Qwen-7B",
-        "base_url": "https://api.siliconflow.cn/v1",
-        "model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
-    },
-]
+# 硅基流动 API 配置（模型名可在界面中修改，如 THUDM/GLM-4-9B-0414）
+SILICONFLOW_PROFILE = {
+    "id": "siliconflow",
+    "label": "硅基流动 SiliconFlow",
+    "base_url": "https://api.siliconflow.cn/v1",
+    "model": "THUDM/GLM-4-9B-0414",
+}
 
 # 默认 Prompt 模板（文献筛选示例）
 DEFAULT_PROMPT = (
@@ -128,28 +114,11 @@ class MainWindow(QMainWindow):
 
         self.setup_ui()
 
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(20)
-        shadow.setXOffset(0)
-        shadow.setYOffset(0)
-        shadow.setColor(QColor(0, 0, 0, 90))
-        self.main_frame.setGraphicsEffect(shadow)
-
         self.log_handler.log_signal.connect(self.append_log)
 
-        # === 从本地配置恢复当前 profile 与对应的 API Key ===
-        if hasattr(self, "api_profile_combo"):
-            # 1) 先确定当前 profile id
-            current_id = load_current_profile_id(API_PROFILES[0]["id"])
-            current_index = 0
-            for i, profile in enumerate(API_PROFILES):
-                if profile["id"] == current_id:
-                    current_index = i
-                    break
-            self.api_profile_combo.setCurrentIndex(current_index)
-
-            # 2) 读取该 profile 的配置并填充 API Key
-            profile = API_PROFILES[current_index]
+        # === 从本地配置恢复 API Key 与模型名 ===
+        if hasattr(self, "api_key_edit") and hasattr(self, "model_name_edit"):
+            profile = SILICONFLOW_PROFILE
             cfg = load_api_profile(
                 profile_id=profile["id"],
                 default_base_url=profile["base_url"],
@@ -158,27 +127,14 @@ class MainWindow(QMainWindow):
             key = cfg.get("api_key") or ""
             if key:
                 self.api_key_edit.setText(key)
-                self.append_log(f"已为 {profile['label']} 自动加载保存的 API Key")
-
-        if hasattr(self, "status_icon"):
-            self.update_status_icon("ready")
+                self.append_log(f"已自动加载保存的 API Key")
+            model = cfg.get("model") or profile["model"]
+            self.model_name_edit.setText(model)
 
     def changeEvent(self, event):
         if event.type() == QEvent.WindowStateChange and hasattr(self, "title_bar"):
             self.title_bar.update_max_button()
         super(MainWindow, self).changeEvent(event)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if hasattr(self, "size_grip") and self.size_grip:
-            try:
-                size = self.size_grip.sizeHint()
-                self.size_grip.move(
-                    self.width() - size.width(), self.height() - size.height()
-                )
-                self.size_grip.raise_()
-            except (AttributeError, RuntimeError):
-                pass
 
     def closeEvent(self, event):
         if hasattr(self, "worker") and self.worker and self.worker.isRunning():
@@ -253,25 +209,36 @@ class MainWindow(QMainWindow):
         api_layout = QVBoxLayout()
         api_layout.setSpacing(6)
 
-        # 平台与模型选择
-        api_layout.addWidget(QLabel("平台与模型"))
-        self.api_profile_combo = QComboBox()
-        self.api_profile_combo.setMinimumWidth(220)
-        self.api_profile_combo.setToolTip("选择调用的平台与模型，例如 DeepSeek 或 SiliconFlow")
-        for profile in API_PROFILES:
-            # itemData 存 profile_id，具体 base_url 和 model 从 API_PROFILES 中查
-            self.api_profile_combo.addItem(profile["label"], profile["id"])
-        self.api_profile_combo.currentIndexChanged.connect(self._on_api_profile_changed)
-        api_layout.addWidget(self.api_profile_combo)
+        # 平台（固定为硅基流动）+ 模型名：标签与内容分行、样式区分
+        platform_row = QHBoxLayout()
+        platform_row.setSpacing(8)
+        lbl_platform = QLabel("平台")
+        lbl_platform.setObjectName("ApiFieldLabel")
+        platform_row.addWidget(lbl_platform)
+        lbl_platform_value = QLabel("硅基流动 SiliconFlow")
+        lbl_platform_value.setObjectName("ApiFieldValue")
+        platform_row.addWidget(lbl_platform_value, 1, Qt.AlignLeft)
+        api_layout.addLayout(platform_row)
+
+        lbl_model = QLabel("模型名")
+        lbl_model.setObjectName("ApiFieldLabel")
+        api_layout.addWidget(lbl_model)
+        self.model_name_edit = QLineEdit()
+        self.model_name_edit.setPlaceholderText("如 THUDM/GLM-4-9B-0414")
+        self.model_name_edit.setToolTip("硅基流动支持的模型名，修改后即可使用该模型")
+        self.model_name_edit.setMinimumHeight(24)
+        api_layout.addWidget(self.model_name_edit)
 
         # API Key
-        api_layout.addWidget(QLabel("API Key"))
+        lbl_key = QLabel("API Key")
+        lbl_key.setObjectName("ApiFieldLabel")
+        api_layout.addWidget(lbl_key)
         api_key_row = QHBoxLayout()
         self.api_key_edit = QLineEdit()
         self.api_key_edit.setEchoMode(QLineEdit.Password)
         self.api_key_edit.setPlaceholderText("sk-...（必填）")
         self.api_key_edit.setToolTip(
-            "平台提供的 API Key，例如 DeepSeek 或 SiliconFlow 控制台生成的密钥"
+            "平台提供的 API Key"
         )
         self.api_key_edit.setMinimumHeight(24)
         self._api_key_visible = False
@@ -297,7 +264,9 @@ class MainWindow(QMainWindow):
         api_layout.addWidget(self.clear_api_btn)
 
         # 并发设置
-        api_layout.addWidget(QLabel("并发线程数"))
+        lbl_workers = QLabel("并发线程数")
+        lbl_workers.setObjectName("ApiFieldLabel")
+        api_layout.addWidget(lbl_workers)
         workers_row = QHBoxLayout()
         self.max_workers_spin = QSpinBox()
         self.max_workers_spin.setMinimum(1)
@@ -409,12 +378,13 @@ class MainWindow(QMainWindow):
 
         template_header = QHBoxLayout()
         template_header.addWidget(QLabel("模板"))
-        self.template_combo = QComboBox()
-        self.template_combo.setMinimumWidth(150)
-        self.template_combo.setToolTip("选择已保存的 Prompt 模板")
-        self.template_combo.currentIndexChanged.connect(self.on_template_selected)
-        self._template_loading = False
-        template_header.addWidget(self.template_combo)
+        self.template_btn = QPushButton("-- 选择模板 --")
+        self.template_btn.setMinimumWidth(150)
+        self.template_btn.setToolTip("点击选择已保存的 Prompt 模板")
+        self.template_btn.clicked.connect(self._show_template_menu)
+        self._current_template_name = None
+        self._template_list = []
+        template_header.addWidget(self.template_btn)
         self.save_template_btn = QPushButton("保存模板")
         self.save_template_btn.setObjectName("PrimaryBtn")
         self.save_template_btn.setToolTip("将当前 Prompt 保存为模板")
@@ -424,6 +394,14 @@ class MainWindow(QMainWindow):
         self.delete_template_btn.setObjectName("DangerBtn")
         self.delete_template_btn.setToolTip("删除选中的模板")
         self.delete_template_btn.clicked.connect(self.delete_prompt_template)
+        self.refresh_templates_btn = QPushButton("刷新")
+        self.refresh_templates_btn.setToolTip("重新从磁盘加载模板列表")
+        self.refresh_templates_btn.clicked.connect(self.refresh_template_list)
+        template_header.addWidget(self.refresh_templates_btn)
+        self.reset_template_btn = QPushButton("重置为默认")
+        self.reset_template_btn.setToolTip("将 Prompt 与分隔符恢复为内置默认模板")
+        self.reset_template_btn.clicked.connect(self.reset_to_default_template)
+        template_header.addWidget(self.reset_template_btn)
         template_header.addStretch()
         p_layout.addLayout(template_header)
         self.refresh_template_list()
@@ -461,17 +439,7 @@ class MainWindow(QMainWindow):
         info_layout = QHBoxLayout()
         info_layout.setSpacing(8)
         info_layout.setAlignment(Qt.AlignVCenter)
-        self.status_icon = QLabel("\u2713")
-        self.status_icon.setObjectName("StatusIcon")
-        self.status_icon.setFixedSize(24, 24)
-        self.status_icon.setAlignment(Qt.AlignCenter)
-        self.status_icon.setStyleSheet(
-            "font-size: 10px; font-weight: 500; color: #16a34a;"
-            " background-color: #dcfce7; border-radius: 12px;"
-        )
-        self.status_icon.setToolTip("状态指示")
-        info_layout.addWidget(self.status_icon)
-        self.status_label = QLabel("准备就绪 \u00B7 请先配置 API、选择文件与列")
+        self.status_label = QLabel("准备就绪 · 请先配置 API、选择文件与列")
         self.status_label.setStyleSheet("font-family: 'Fira Sans', 'Microsoft YaHei UI', sans-serif; font-weight: 500; color: #64748b; font-size: 10px;")
         self.status_label.setToolTip("当前状态与下一步提示")
         info_layout.addWidget(self.status_label)
@@ -516,13 +484,10 @@ class MainWindow(QMainWindow):
         self.main_splitter.setSizes([LEFT_PANEL_WIDTH, 680])
         main_layout.addWidget(self.main_splitter)
 
-        self.size_grip = QSizeGrip(self.main_frame)
-        self.size_grip.setObjectName("SizeGrip")
-
         # 设计系统: 所有可点击元素手型光标 (MASTER: cursor-pointer)
         for btn in self.main_frame.findChildren(QPushButton):
             btn.setCursor(Qt.PointingHandCursor)
-        for w in [self.api_profile_combo, self.template_combo, self.col_list]:
+        for w in [self.model_name_edit, self.template_btn, self.col_list]:
             w.setCursor(Qt.PointingHandCursor)
 
         self._setup_shortcuts()
@@ -569,105 +534,166 @@ class MainWindow(QMainWindow):
     # ===== API Profile & Client =====
 
     def _get_current_profile(self) -> dict:
-        """
-        根据下拉框当前选择，返回对应的 profile dict。
-        """
-        if not hasattr(self, "api_profile_combo"):
-            return API_PROFILES[0]
-        idx = self.api_profile_combo.currentIndex()
-        if idx < 0 or idx >= len(API_PROFILES):
-            return API_PROFILES[0]
-        return API_PROFILES[idx]
+        """返回当前使用的硅基流动 profile。"""
+        return SILICONFLOW_PROFILE
 
-    def _on_api_profile_changed(self, index: int) -> None:
-        """
-        切换「平台与模型」时，自动加载对应 profile 保存的 API Key。
-        仅更新输入框，不主动调用接口。
-        """
-        if index < 0:
-            return
-        profile = self._get_current_profile()
-        cfg = load_api_profile(
-            profile_id=profile["id"],
-            default_base_url=profile["base_url"],
-            default_model=profile["model"],
-        )
-        key = cfg.get("api_key") or ""
-        self.api_key_edit.setText(key)
-        if key:
-            self.append_log(f"已为 {profile['label']} 加载保存的 API Key")
-        else:
-            self.append_log(f"{profile['label']} 尚未保存 API Key，请输入后测试连接")
+    def _get_current_model(self) -> str:
+        """返回当前使用的模型名（从输入框读取，空则用默认）。"""
+        model = self.model_name_edit.text().strip() if hasattr(self, "model_name_edit") else ""
+        return model or SILICONFLOW_PROFILE["model"]
 
     def refresh_template_list(self):
-        if not hasattr(self, "template_combo") or not self.template_combo:
+        if not hasattr(self, "template_btn") or not self.template_btn:
             return
-        self._template_loading = True
-        try:
-            self.template_combo.clear()
-            self.template_combo.addItem("-- 选择模板 --")
-            if not os.path.exists(TEMPLATE_DIR):
-                return
-            templates = []
-            for filename in os.listdir(TEMPLATE_DIR):
+        template_dir = os.path.abspath(os.path.normpath(TEMPLATE_DIR))
+        self._template_list = []
+        if os.path.isdir(template_dir):
+            for filename in os.listdir(template_dir):
                 if not filename.endswith(".json"):
                     continue
-                filepath = os.path.join(TEMPLATE_DIR, filename)
+                filepath = os.path.join(template_dir, filename)
                 try:
                     with open(filepath, "r", encoding="utf-8") as f:
                         data = json.load(f)
-                        templates.append((data.get("name", filename[:-5]), filename))
+                        self._template_list.append({
+                            "name": data.get("name", filename[:-5]),
+                            "filename": filename,
+                            "created_time": data.get("created_time", ""),
+                        })
                 except (json.JSONDecodeError, OSError) as e:
                     logging.warning(f"无法加载模板 {filename}: {e}")
-            templates.sort(key=lambda x: x[0])
-            for name, filename in templates:
-                self.template_combo.addItem(name, filename)
-        finally:
-            self._template_loading = False
+            self._template_list.sort(key=lambda x: x["name"])
+        names = [t["name"] for t in self._template_list]
+        if self._current_template_name not in names:
+            self._current_template_name = None
+        self.template_btn.setText(self._current_template_name or "-- 选择模板 --")
+
+    def _sanitize_template_filename(self, name):
+        """将模板名称转为安全文件名（避免 Windows 非法字符）。"""
+        invalid = r'\/:*?"<>|'
+        return "".join(c if c not in invalid else "_" for c in name.strip()) or "template"
+
+    def _find_template_file_by_name(self, template_name):
+        """
+        根据模板显示名称查找对应的模板文件路径。
+        先按 data['name'] 匹配，再按文件名「名称.json」匹配，避免编码或时序问题。
+        返回: (filepath, filename) 或 (None, None)。
+        """
+        if not template_name or not template_name.strip():
+            return None, None
+        name = template_name.strip()
+        template_dir = os.path.abspath(os.path.normpath(TEMPLATE_DIR))
+        if not os.path.isdir(template_dir):
+            return None, None
+        # 1) 按 JSON 内 name 字段匹配
+        for filename in sorted(os.listdir(template_dir)):
+            if not filename.endswith(".json"):
+                continue
+            filepath = os.path.join(template_dir, filename)
+            try:
+                with open(filepath, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if (data.get("name") or "").strip() == name:
+                    return filepath, filename
+            except (json.JSONDecodeError, OSError):
+                continue
+        # 2) 备用：按「安全文件名.json」直接匹配
+        safe = self._sanitize_template_filename(name)
+        candidate = os.path.join(template_dir, f"{safe}.json")
+        if os.path.isfile(candidate):
+            return candidate, f"{safe}.json"
+        return None, None
 
     def save_prompt_template(self):
         prompt_text = self.prompt_edit.toPlainText().strip()
         if not prompt_text:
-            QMessageBox.warning(self, "提示", "Prompt内容不能为空")
+            QMessageBox.warning(self, "提示", "Prompt 内容不能为空")
             return
-        name, ok = QInputDialog.getText(self, "保存模板", "请输入模板名称:")
+        default_name = self._current_template_name or ""
+        name, ok = QInputDialog.getText(self, "保存模板", "请输入模板名称:", text=default_name)
         if not ok or not name.strip():
             return
         name = name.strip()
+        safe_filename = self._sanitize_template_filename(name)
+        filepath = os.path.join(TEMPLATE_DIR, f"{safe_filename}.json")
+        created_time = time.strftime("%Y-%m-%d %H:%M:%S")
+        if os.path.isfile(filepath):
+            try:
+                with open(filepath, "r", encoding="utf-8") as f:
+                    old = json.load(f)
+                created_time = old.get("created_time", created_time)
+            except (json.JSONDecodeError, OSError):
+                pass
+            reply = QMessageBox.question(
+                self, "确认覆盖",
+                f"已存在同名模板「{name}」，是否覆盖？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                return
         template_data = {
             "name": name,
             "content": prompt_text,
             "delimiter": self.delim_edit.text(),
-            "created_time": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "created_time": created_time,
+            "updated_time": time.strftime("%Y-%m-%d %H:%M:%S"),
         }
-        filepath = os.path.join(TEMPLATE_DIR, f"{name}.json")
         try:
+            os.makedirs(TEMPLATE_DIR, exist_ok=True)
             with open(filepath, "w", encoding="utf-8") as f:
                 json.dump(template_data, f, ensure_ascii=False, indent=2)
-            QMessageBox.information(self, "成功", f"模板 '{name}' 已保存")
+            QMessageBox.information(self, "成功", f"模板「{name}」已保存")
             self.refresh_template_list()
-            idx = self.template_combo.findText(name)
-            if idx >= 0:
-                self.template_combo.setCurrentIndex(idx)
+            self._current_template_name = name
+            self.template_btn.setText(name)
         except Exception as e:
             QMessageBox.critical(self, "错误", f"保存模板失败: {e}")
 
-    def on_template_selected(self, index):
-        if self._template_loading or index < 1:
-            return
-        self.load_prompt_template()
+    def _show_template_menu(self):
+        """在模板按钮下方弹出菜单：选择模板、刷新、打开文件夹、重命名/删除当前。"""
+        self.refresh_template_list()
+        menu = QMenu(self)
+        if not self._template_list:
+            action = menu.addAction("（暂无已保存的模板）")
+            action.setEnabled(False)
+        else:
+            for t in self._template_list:
+                name, created = t["name"], t.get("created_time", "")
+                label = f"{name}  ·  {created}" if created else name
+                action = menu.addAction(label)
+                action.setToolTip(f"加载模板：{name}")
+                action.triggered.connect(lambda checked, n=name: self._on_template_chosen(n))
+        menu.addSeparator()
+        menu.addAction("另存为...", self.duplicate_prompt_template)
+        menu.addAction("刷新列表", self.refresh_template_list)
+        menu.addAction("打开模板文件夹", self._open_templates_folder)
+        if self._current_template_name:
+            menu.addSeparator()
+            menu.addAction(f"重命名「{self._current_template_name}」", self.rename_prompt_template)
+            menu.addAction(f"删除「{self._current_template_name}」", self.delete_prompt_template)
+        menu.exec_(self.template_btn.mapToGlobal(self.template_btn.rect().bottomLeft()))
 
-    def load_prompt_template(self):
-        index = self.template_combo.currentIndex()
-        if index < 1:
+    def _on_template_chosen(self, template_name):
+        """菜单选中某项后加载该模板并更新按钮文字。"""
+        self.load_prompt_template(template_name)
+
+    def reset_to_default_template(self):
+        """将 Prompt 与分隔符恢复为内置默认模板，并清除当前模板选中。"""
+        self.prompt_edit.setPlainText(DEFAULT_PROMPT)
+        self.delim_edit.setText("|")
+        self._current_template_name = None
+        self.template_btn.setText("-- 选择模板 --")
+        self.append_log("已重置为默认模板")
+
+    def load_prompt_template(self, template_name=None):
+        """根据模板名称加载内容到编辑框，并更新当前模板名与按钮文字。"""
+        name = (template_name or self._current_template_name or "").strip()
+        if not name:
             return
-        template_name = self.template_combo.currentText()
-        filename = self.template_combo.itemData(index)
-        if not filename:
-            return
-        filepath = os.path.join(TEMPLATE_DIR, filename)
-        if not os.path.exists(filepath):
-            QMessageBox.warning(self, "错误", "模板文件不存在")
+        filepath, _ = self._find_template_file_by_name(name)
+        if not filepath or not os.path.isfile(filepath):
+            QMessageBox.warning(self, "错误", "未找到该模板文件，请刷新后重试")
             self.refresh_template_list()
             return
         try:
@@ -676,17 +702,22 @@ class MainWindow(QMainWindow):
             self.prompt_edit.setPlainText(data.get("content", ""))
             if "delimiter" in data:
                 self.delim_edit.setText(data["delimiter"])
-            self.append_log(f"已加载模板: {template_name}")
+            self._current_template_name = name
+            self.template_btn.setText(name)
+            self.append_log(f"已加载模板: {name}")
         except Exception as e:
             QMessageBox.critical(self, "错误", f"加载模板失败: {e}")
 
     def delete_prompt_template(self):
-        index = self.template_combo.currentIndex()
-        if index < 1:
-            QMessageBox.warning(self, "提示", "请先选择一个模板")
+        template_name = (self._current_template_name or "").strip()
+        if not template_name:
+            QMessageBox.warning(self, "提示", "请先通过「模板」按钮选择并加载要删除的模板")
             return
-        template_name = self.template_combo.currentText()
-        filename = self.template_combo.itemData(index)
+        filepath, _ = self._find_template_file_by_name(template_name)
+        if not filepath:
+            QMessageBox.warning(self, "提示", "未找到该模板文件，请刷新模板列表后重试")
+            self.refresh_template_list()
+            return
         reply = QMessageBox.question(
             self,
             "确认删除",
@@ -694,14 +725,103 @@ class MainWindow(QMainWindow):
             QMessageBox.Yes | QMessageBox.No,
         )
         if reply == QMessageBox.Yes:
-            filepath = os.path.join(TEMPLATE_DIR, filename)
             try:
                 if os.path.exists(filepath):
                     os.remove(filepath)
                     QMessageBox.information(self, "成功", f"模板 '{template_name}' 已删除")
+                    if self._current_template_name == template_name:
+                        self._current_template_name = None
+                        self.template_btn.setText("-- 选择模板 --")
                     self.refresh_template_list()
             except Exception as e:
                 QMessageBox.critical(self, "错误", f"删除模板失败: {e}")
+
+    def _open_templates_folder(self):
+        """在系统文件管理器中打开模板目录。"""
+        folder = os.path.abspath(os.path.normpath(TEMPLATE_DIR))
+        if not os.path.isdir(folder):
+            os.makedirs(folder, exist_ok=True)
+        if sys.platform == "win32":
+            os.startfile(folder)
+        elif sys.platform == "darwin":
+            subprocess.run(["open", folder], check=False)
+        else:
+            subprocess.run(["xdg-open", folder], check=False)
+
+    def rename_prompt_template(self):
+        """重命名当前选中的模板。"""
+        name = (self._current_template_name or "").strip()
+        if not name:
+            QMessageBox.warning(self, "提示", "请先选择要重命名的模板")
+            return
+        filepath, filename = self._find_template_file_by_name(name)
+        if not filepath or not os.path.isfile(filepath):
+            QMessageBox.warning(self, "提示", "未找到该模板文件")
+            self.refresh_template_list()
+            return
+        new_name, ok = QInputDialog.getText(self, "重命名模板", "新名称:", text=name)
+        if not ok or not new_name.strip() or new_name.strip() == name:
+            return
+        new_name = new_name.strip()
+        new_safe = self._sanitize_template_filename(new_name)
+        new_filepath = os.path.join(TEMPLATE_DIR, f"{new_safe}.json")
+        if os.path.isfile(new_filepath):
+            QMessageBox.warning(self, "提示", f"已存在名为「{new_name}」的模板，请换一个名称")
+            return
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            data["name"] = new_name
+            data["updated_time"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            with open(new_filepath, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            os.remove(filepath)
+            self._current_template_name = new_name
+            self.template_btn.setText(new_name)
+            self.refresh_template_list()
+            self.append_log(f"已重命名: {name} → {new_name}")
+            QMessageBox.information(self, "成功", f"已重命名为「{new_name}」")
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"重命名失败: {e}")
+
+    def duplicate_prompt_template(self):
+        """将当前 Prompt 另存为新模板（不覆盖当前选中）。"""
+        prompt_text = self.prompt_edit.toPlainText().strip()
+        if not prompt_text:
+            QMessageBox.warning(self, "提示", "Prompt 内容不能为空")
+            return
+        new_name, ok = QInputDialog.getText(self, "另存为", "新模板名称:")
+        if not ok or not new_name.strip():
+            return
+        new_name = new_name.strip()
+        safe_filename = self._sanitize_template_filename(new_name)
+        filepath = os.path.join(TEMPLATE_DIR, f"{safe_filename}.json")
+        if os.path.isfile(filepath):
+            reply = QMessageBox.question(
+                self, "确认覆盖",
+                f"已存在同名模板「{new_name}」，是否覆盖？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                return
+        created_time = time.strftime("%Y-%m-%d %H:%M:%S")
+        template_data = {
+            "name": new_name,
+            "content": prompt_text,
+            "delimiter": self.delim_edit.text(),
+            "created_time": created_time,
+            "updated_time": created_time,
+        }
+        try:
+            os.makedirs(TEMPLATE_DIR, exist_ok=True)
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(template_data, f, ensure_ascii=False, indent=2)
+            self.refresh_template_list()
+            self.append_log(f"已另存为模板: {new_name}")
+            QMessageBox.information(self, "成功", f"已另存为「{new_name}」")
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"另存为失败: {e}")
 
     def append_log(self, text):
         if not hasattr(self, "log_console") or not self.log_console:
@@ -720,14 +840,18 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "提示", "请先输入 API Key")
             return None
 
+        model = self._get_current_model()
+        if not model:
+            QMessageBox.warning(self, "提示", "请输入模型名")
+            return None
+
         profile = self._get_current_profile()
         base_url = profile["base_url"]
-        model = profile["model"]
 
         # 初始化 client
         client = init_client(api_key, base_url=base_url, model=model)
 
-        # 将该 profile 的配置（尤其是 key）单独保存，供下次自动恢复
+        # 保存 API Key 与模型名，供下次自动恢复
         save_api_profile(
             profile_id=profile["id"],
             api_key=api_key,
@@ -772,20 +896,20 @@ class MainWindow(QMainWindow):
             pass
 
     def clear_saved_api(self):
-        """清除当前 profile 保存的 API Key"""
+        """清除保存的 API Key"""
         profile = self._get_current_profile()
         reply = QMessageBox.question(
             self,
             "确认清除",
-            f"确定要清除 {profile['label']} 保存的 API Key 吗？\n清除后需要重新输入 API Key。",
+            f"确定要清除保存的 API Key 吗？\n清除后需要重新输入 API Key。",
             QMessageBox.Yes | QMessageBox.No,
         )
         if reply == QMessageBox.Yes:
             try:
                 clear_api_profile(profile["id"])
                 self.api_key_edit.clear()
-                self.append_log(f"已清除 {profile['label']} 保存的 API Key")
-                QMessageBox.information(self, "成功", f"已清除 {profile['label']} 保存的 API Key")
+                self.append_log("已清除保存的 API Key")
+                QMessageBox.information(self, "成功", "已清除保存的 API Key")
             except Exception as e:
                 QMessageBox.critical(self, "错误", f"清除失败: {e}")
                 self.append_log(f"清除 API Key 失败: {e}")
@@ -819,28 +943,43 @@ class MainWindow(QMainWindow):
             return
         try:
             import pandas as pd
-            df = pd.read_excel(path, nrows=5)
-            if df.empty:
-                QMessageBox.warning(self, "警告", "文件为空或无法读取")
-                return
+            # 先仅读表头行取列名（nrows=0 只读表头，避免 df.empty 误判）
+            try:
+                df = pd.read_excel(path, nrows=0, header=0)
+            except Exception:
+                df = pd.read_excel(path, nrows=1, header=0)
             cols = df.columns.tolist()
+            # 若第一行全是 Unnamed 或空，尝试用第二行做表头
+            if cols and all(
+                str(c).startswith("Unnamed") or str(c).strip() == ""
+                for c in cols
+            ):
+                try:
+                    df = pd.read_excel(path, nrows=0, header=1)
+                except Exception:
+                    df = pd.read_excel(path, nrows=2, header=1)
+                if not df.empty or len(df.columns) > 0:
+                    cols = df.columns.tolist()
             if not cols:
                 QMessageBox.warning(self, "警告", "文件中没有找到列")
                 return
-            if hasattr(self, "col_list") and self.col_list:
-                self.col_list.blockSignals(True)
-                self.col_list.clear()
-                for c in cols:
-                    item = QListWidgetItem(str(c))
-                    item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-                    item.setCheckState(Qt.Unchecked)
-                    self.col_list.addItem(item)
-                self.col_list.blockSignals(False)
-                if hasattr(self, "col_count_label"):
-                    self.col_count_label.setText("已选 0 列")
-                if hasattr(self, "col_hint"):
-                    self.col_hint.setText("勾选需要参与合并并发送给 AI 的列")
-                self.append_log(f"已加载文件列: {len(cols)} 列")
+            cols = [str(c) for c in cols]
+            # 直接填充列列表（不依赖 hasattr，确保一定会刷新）
+            self.col_list.blockSignals(True)
+            self.col_list.clear()
+            for c in cols:
+                item = QListWidgetItem(str(c))
+                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                item.setCheckState(Qt.Unchecked)
+                self.col_list.addItem(item)
+            self.col_list.blockSignals(False)
+            self.col_count_label.setText("已选 0 列")
+            self.col_hint.setText("勾选需要参与合并并发送给 AI 的列")
+            self.col_list.viewport().update()
+            self.col_list.updateGeometry()
+            self.col_list.repaint()
+            QApplication.processEvents()
+            self.append_log(f"已加载文件列: {len(cols)} 列")
         except Exception as e:
             QMessageBox.critical(self, "错误", f"读取文件时发生错误: {e}")
             logging.error(f"加载列时出错: {e}", exc_info=True)
@@ -907,29 +1046,12 @@ class MainWindow(QMainWindow):
             self.stop_btn.setEnabled(False)
             self.stop_btn.setText("停止")
 
-    def update_status_icon(self, status):
-        if not hasattr(self, "status_icon"):
-            return
-        config = {
-            "ready": ("\u2713", "#16a34a", "#dcfce7"),
-            "processing": ("\u23F3", "#2563eb", "#dbeafe"),
-            "success": ("\u2713", "#16a34a", "#dcfce7"),
-            "error": ("\u2717", "#dc2626", "#fee2e2"),
-        }
-        icon, color, bg = config.get(status, ("\u2713", "#475569", "#f1f5f9"))
-        self.status_icon.setText(icon)
-        self.status_icon.setStyleSheet(
-            f"font-size: 10px; font-weight: 500; color: {color};"
-            f" background-color: {bg}; border-radius: 12px;"
-        )
-
     def on_progress(self, done, total, eta):
         if not hasattr(self, "progress_bar") or not self.progress_bar:
             return
         try:
             self.progress_bar.setMaximum(max(total, 1))
             self.progress_bar.setValue(min(done, total))
-            self.update_status_icon("processing")
             if eta >= 0:
                 m, s = divmod(int(eta), 60)
                 h, m = divmod(m, 60)
@@ -953,16 +1075,13 @@ class MainWindow(QMainWindow):
             if hasattr(self, "eta_label"):
                 self.eta_label.setText("--:--")
             if ok:
-                self.update_status_icon("success")
                 QMessageBox.information(self, "完成", msg)
                 self.append_log(f"[完成] {msg}")
             else:
                 if "用户中断" in msg:
-                    self.update_status_icon("ready")
                     QMessageBox.warning(self, "中断", msg)
                     self.append_log(f"[中断] {msg}")
                 else:
-                    self.update_status_icon("error")
                     QMessageBox.critical(self, "错误", msg)
                     self.append_log(f"[错误] {msg}")
         except (AttributeError, RuntimeError):

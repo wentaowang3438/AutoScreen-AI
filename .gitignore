@@ -1,3 +1,12 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# 本地/测试数据（不随仓库或分发包提交）
+result_fast.xlsx
+output.xlsx
+
 # PyInstaller / 打包产物
 dist/
 build/

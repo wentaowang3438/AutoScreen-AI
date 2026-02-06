@@ -1,6 +1,6 @@
 # DeepSeek 批处理工具
 
-一个基于 PySide6 和 DeepSeek API 的现代化 Excel 批处理工具，支持自定义 Prompt 模板、多线程处理、智能缓存和错误处理。
+一个基于 PyQt5 和兼容 OpenAI 接口（如 DeepSeek、硅基流动等）的现代化 Excel 批处理工具，支持自定义 Prompt 模板、多线程处理、智能缓存和错误处理。
 
 ## ✨ 功能特点
 
@@ -15,7 +15,7 @@
 - **API 测试**：内置 API 连接测试功能
 
 ### 🎨 界面特性
-- 现代化的 PySide6 图形界面
+- 现代化的 PyQt5 图形界面
 - 响应式布局，支持窗口调整
 - 清晰的分组和标签
 - 实时状态反馈
@@ -24,7 +24,7 @@
 
 - Python 3.7 或更高版本
 - Windows / macOS / Linux
-- DeepSeek API 密钥
+- 兼容 OpenAI 接口的 API 密钥（如 DeepSeek、硅基流动等，在程序内配置）
 
 ## 🚀 安装步骤
 
@@ -33,7 +33,7 @@
 ```bash
 # 如果使用 git
 git clone <repository-url>
-cd AF
+cd AutoScreen-AI
 
 # 或直接下载项目文件
 ```
@@ -47,31 +47,14 @@ pip install -r requirements.txt
 或者手动安装：
 
 ```bash
-pip install pandas openpyxl openai PySide6
+pip install pandas openpyxl openai PyQt5
 ```
 
 ### 3. 配置 API 密钥
 
-设置环境变量 `DEEPSEEK_API_KEY`：
+**在程序内配置（推荐）：** 运行程序后，在界面中填写 API 密钥、接口地址与模型名，点击保存。配置会保存在用户目录下（`~/.deepseek_config.json`），下次启动会自动加载。支持多 API 配置（Profile）切换。
 
-**Windows (PowerShell):**
-```powershell
-$env:DEEPSEEK_API_KEY = "your-api-key-here"
-```
-
-**Windows (CMD):**
-```cmd
-set DEEPSEEK_API_KEY=your-api-key-here
-```
-
-**Linux/macOS:**
-```bash
-export DEEPSEEK_API_KEY=your-api-key-here
-```
-
-**永久设置（推荐）：**
-
-在系统环境变量中添加 `DEEPSEEK_API_KEY`，或创建 `.env` 文件（需要安装 python-dotenv）。
+无需设置环境变量。
 
 ### 4. 运行程序
 
@@ -146,11 +129,7 @@ python main.py
 
 ### 调整线程数
 
-在 `api.py` 的 `run_processing` 中修改 `ThreadPoolExecutor` 的 `max_workers` 参数：
-
-```python
-with ThreadPoolExecutor(max_workers=20) as pool:  # 修改这里的数字
-```
+在界面「并发数」中可设置 1–100 的线程数，设置会保存到本地配置。或在 `config.py` 中修改 `DEFAULT_MAX_WORKERS`。
 
 **建议值：**
 - 网络良好：20-40
@@ -167,12 +146,12 @@ def call_model(prompt: str, max_retries: int = 3):  # 修改这里的数字
 
 ## 🔧 常见问题
 
-### Q1: 提示 "请设置环境变量 DEEPSEEK_API_KEY"
+### Q1: 提示 API 未初始化或调用失败
 
 **解决方案：**
-- 确保已正确设置环境变量
-- 重启终端/IDE 后再次运行
-- 检查环境变量名称是否正确（注意大小写）
+- 在界面中填写并保存 API Key、接口地址与模型名
+- 点击「🔍 测试 API」确认连接正常
+- 确认密钥有效、网络可访问对应接口
 
 ### Q2: API 调用失败
 
@@ -240,16 +219,16 @@ AutoScreen-AI/
 ## 🛠️ 技术栈
 
 - **Python 3.7+**
-- **PySide6**：现代化 GUI 框架
+- **PyQt5**：GUI 框架
 - **pandas**：Excel 文件处理
 - **openpyxl**：Excel 文件读写
-- **openai**：DeepSeek API 客户端
+- **openai**：兼容 OpenAI 接口的 API 客户端（DeepSeek、硅基流动等）
 - **concurrent.futures**：多线程处理
 
 ## 📝 更新日志
 
 ### v2.0 (当前版本)
-- ✨ 升级到 PySide6
+- ✨ 使用 PyQt5 图形界面
 - ✨ 添加自动列检测功能
 - ✨ 添加 API 测试功能
 - ✨ 添加预计剩余时间显示

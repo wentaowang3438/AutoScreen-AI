@@ -87,12 +87,15 @@ def get_current_base_url() -> str:
     return _base_url or DEFAULT_BASE_URL
 
 
-def call_model(prompt: str, max_retries: int = 3) -> str:
+def call_model(prompt: str, max_retries: int = 3, stop_flag=None) -> str:
+    """stop_flag: 可调用对象，若返回 True 则立即中止（用于用户点击停止）。"""
     if _client is None:
         raise RuntimeError("Client 未初始化")
 
     backoff_base = 2
     for attempt in range(max_retries):
+        if stop_flag and callable(stop_flag) and stop_flag():
+            return ""
         try:
             resp = _client.chat.completions.create(
                 model=_model,
@@ -102,6 +105,8 @@ def call_model(prompt: str, max_retries: int = 3) -> str:
             return (resp.choices[0].message.content or "").strip()
         except Exception as e:
             logging.warning(f"模型调用重试 ({attempt + 1}/{max_retries}): {e}")
+            if stop_flag and callable(stop_flag) and stop_flag():
+                return ""
             if attempt < max_retries - 1:
                 time.sleep(backoff_base**attempt)
             else:
@@ -109,11 +114,11 @@ def call_model(prompt: str, max_retries: int = 3) -> str:
     return ""
 
 
-def process_row(row_index, merged_text, delimiter, prompt_template, cache_key):
+def process_row(row_index, merged_text, delimiter, prompt_template, cache_key, stop_flag=None):
     prompt = prompt_template.replace("{merged_text}", merged_text).replace(
         "{delimiter}", delimiter
     )
-    result = call_model(prompt)
+    result = call_model(prompt, stop_flag=stop_flag)
 
     error = False
     error_msg = ""
@@ -161,10 +166,13 @@ def run_processing(
 
     log_cb(f"开始处理 {total} 行数据... (并发数: {max_workers})")
 
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+    user_stopped = False
+    pool = ThreadPoolExecutor(max_workers=max_workers)
+    try:
         tasks = []
         for idx, row in df.iterrows():
             if stop_flag():
+                user_stopped = True
                 break
 
             row_vals = []
@@ -191,12 +199,13 @@ def run_processing(
                 progress_cb(done_cnt, total)
             else:
                 future = pool.submit(
-                    process_row, idx, merged_text, delimiter, prompt, key
+                    process_row, idx, merged_text, delimiter, prompt, key, stop_flag
                 )
                 tasks.append(future)
 
         for future in as_completed(tasks):
             if stop_flag():
+                user_stopped = True
                 break
             r = future.result()
             results.append(r)
@@ -211,6 +220,9 @@ def run_processing(
 
             done_cnt += 1
             progress_cb(done_cnt, total)
+    finally:
+        # 用户停止时不等待未完成任务，尽快返回；否则正常等待所有任务结束
+        pool.shutdown(wait=not user_stopped)
 
     for r in results:
         df.at[r["index"], "AI_Output"] = r["output"]

@@ -1,22 +1,22 @@
 """
-应用全局 QSS - 简约精致浅色
-- 轻边框、小圆角、适度留白、字重克制
+应用全局 QSS - 简约精致浅色，对比度优化
+- 更深边框与次要文字，层次更清晰、可读性更好
 """
-# 主背景与表面：浅灰降低刺眼感，保持层次
-_BG = "#f4f4f5"
-_SURFACE = "#eef0f2"
-_BORDER = "#e4e7eb"
-_BORDER_FOCUS = "#d1d5db"
+# 主背景与表面：背景略深、表面与边框对比更强
+_BG = "#f0f2f5"
+_SURFACE = "#e4e7eb"
+_BORDER = "#cbd5e1"
+_BORDER_FOCUS = "#94a3b8"
 _TEXT = "#0f172a"
-_MUTED = "#64748b"
+_MUTED = "#334155"
 _PRIMARY = "#2563eb"
 _CTA = "#16a34a"
 _SUCCESS = "#16a34a"
 _DANGER = "#dc2626"
-_HOVER_BG = "#e8eaed"
-_INPUT_BG = "#fafafa"
-_DISABLED = "#94a3b8"
-_SELECTION = "#eff6ff"
+_HOVER_BG = "#dde1e6"
+_INPUT_BG = "#ffffff"
+_DISABLED = "#64748b"
+_SELECTION = "#dbeafe"
 
 _FONT = '"Fira Sans", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif'
 
@@ -51,19 +51,16 @@ QMainWindow {{ background-color: transparent; }}
     letter-spacing: 0.02em;
 }}
 
-/* 标题栏窗口控制：极简线条风格，统一中灰图标、扁平 */
+/* 标题栏窗口控制：文字按钮，兼容 PyQt5 */
 #TitleBtn {{
     background: transparent;
     border: none;
     border-radius: 4px;
     color: {_MUTED};
     font-weight: 400;
-    font-size: 12px;
-    min-width: 28px;
+    font-size: 10px;
     min-height: 28px;
-    max-width: 28px;
-    max-height: 28px;
-    padding: 0;
+    padding: 0 8px;
 }}
 #TitleBtn:hover {{
     background-color: {_HOVER_BG};
@@ -78,12 +75,9 @@ QMainWindow {{ background-color: transparent; }}
     border-radius: 4px;
     color: {_MUTED};
     font-weight: 400;
-    font-size: 12px;
-    min-width: 28px;
+    font-size: 10px;
     min-height: 28px;
-    max-width: 28px;
-    max-height: 28px;
-    padding: 0;
+    padding: 0 8px;
 }}
 #TitleBtn_Close:hover {{
     background-color: {_HOVER_BG};
@@ -110,6 +104,20 @@ QGroupBox::title {{
     padding: 0 8px;
     left: 12px;
     color: {_TEXT};
+}}
+
+/* API 配置区：字段标签与内容层级 */
+QLabel#ApiFieldLabel {{
+    color: {_MUTED};
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    margin-bottom: 2px;
+}}
+QLabel#ApiFieldValue {{
+    color: {_TEXT};
+    font-size: 10px;
+    font-weight: 600;
 }}
 
 QLineEdit, QTextEdit, QPlainTextEdit {{
@@ -302,16 +310,6 @@ QSplitter::handle {{
     width: 1px;
 }}
 QSplitter::handle:hover {{ background: {_MUTED}; }}
-
-QSizeGrip {{ background: transparent; width: 12px; height: 12px; }}
-
-QLabel#StatusIcon {{
-    font-size: 10px;
-    font-weight: 500;
-    min-width: 24px;
-    min-height: 24px;
-    border-radius: 12px;
-}}
 
 QLabel#HintLabel {{
     color: {_MUTED};

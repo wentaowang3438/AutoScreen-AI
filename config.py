@@ -8,11 +8,14 @@ import logging
 from typing import Dict, Any
 
 CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".deepseek_config.json")
-TEMPLATE_DIR = os.path.join(os.path.expanduser("~"), ".deepseek_templates")
 
-# 默认 API 配置（向后兼容之前只有 DeepSeek 的版本）
-DEFAULT_BASE_URL = "https://api.deepseek.com"
-DEFAULT_MODEL = "deepseek-chat"
+# 模板目录：放在项目根目录下，随项目一起迁移/备份
+_PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+TEMPLATE_DIR = os.path.join(_PROJECT_ROOT, "templates")
+
+# 默认 API 配置（硅基流动，模型名可自由修改）
+DEFAULT_BASE_URL = "https://api.siliconflow.cn/v1"
+DEFAULT_MODEL = "THUDM/GLM-4-9B-0414"
 
 
 def encode_key(key: str) -> str:
@@ -55,7 +58,7 @@ def save_api_profile(
 ) -> None:
     """
     为指定 profile 保存一份独立配置：
-    - profile_id: 例如 "deepseek-chat" / "siliconflow-glm-4.7"
+    - profile_id: 例如 "siliconflow"
     - api_key: 明文 key，将以 base64 存储
     - base_url / model: 平台与模型
     """

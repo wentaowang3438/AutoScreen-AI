@@ -38,34 +38,32 @@ class CustomTitleBar(QWidget):
         layout.setContentsMargins(12, 0, 6, 0)
         layout.setSpacing(0)
 
-        self.title_label = QLabel("DeepSeek Excel 智能批处理工具 Pro")
+        self.title_label = QLabel("DeepSeek Excel 智能批处理工具")
         self.title_label.setObjectName("TitleLabel")
         self.title_label.setAlignment(Qt.AlignVCenter)
         layout.addWidget(self.title_label, 0, Qt.AlignVCenter)
         layout.addStretch()
 
-        # 最小化：水平短横线（极简线条）
-        self.min_btn = QPushButton("\u2500")   # ─ (BOX DRAWINGS LIGHT HORIZONTAL)
+        # 最小化 / 最大化 / 关闭（文字按钮，兼容 PyQt5）
+        self.min_btn = QPushButton("最小化")
         self.min_btn.setObjectName("TitleBtn")
-        self.min_btn.setFixedSize(28, 28)
+        self.min_btn.setFixedHeight(28)
         self.min_btn.setCursor(Qt.PointingHandCursor)
         if self.window_parent:
             self.min_btn.clicked.connect(self.window_parent.showMinimized)
         self.min_btn.setToolTip("最小化")
 
-        # 最大化/还原：单方框□ 与 重叠方框⧉ 切换
-        self.max_btn = QPushButton("\u25A1")   # □ 未最大化时显示
+        self.max_btn = QPushButton("最大化")
         self.max_btn.setObjectName("TitleBtn")
-        self.max_btn.setFixedSize(28, 28)
+        self.max_btn.setFixedHeight(28)
         self.max_btn.setCursor(Qt.PointingHandCursor)
         if self.window_parent:
             self.max_btn.clicked.connect(self.toggle_max_state)
         self.max_btn.setToolTip("最大化 / 还原")
 
-        # 关闭：X 形线条
-        self.close_btn = QPushButton("\u00D7")  # ×
+        self.close_btn = QPushButton("关闭")
         self.close_btn.setObjectName("TitleBtn_Close")
-        self.close_btn.setFixedSize(28, 28)
+        self.close_btn.setFixedHeight(28)
         self.close_btn.setCursor(Qt.PointingHandCursor)
         if self.window_parent:
             self.close_btn.clicked.connect(self.window_parent.close)
@@ -87,15 +85,15 @@ class CustomTitleBar(QWidget):
             return
         if self.window_parent.isMaximized():
             self.window_parent.showNormal()
-            self.max_btn.setText("\u25A1")   # □ 还原后显示“最大化”
+            self.max_btn.setText("最大化")
         else:
             self.window_parent.showMaximized()
-            self.max_btn.setText("\u29C9")   # ⧉ 重叠方框表示“还原”
+            self.max_btn.setText("还原")
 
     def update_max_button(self):
         if not self.window_parent:
             return
-        self.max_btn.setText("\u29C9" if self.window_parent.isMaximized() else "\u25A1")
+        self.max_btn.setText("还原" if self.window_parent.isMaximized() else "最大化")
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.LeftButton:

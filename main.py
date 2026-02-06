@@ -1,5 +1,5 @@
 """
-DeepSeek Excel 智能批处理工具 Pro - 程序入口
+DeepSeek Excel 智能批处理工具 - 程序入口
 """
 import os
 import sys
@@ -7,6 +7,19 @@ import sys
 # 在导入 QApplication 之前设置 Qt 平台插件路径，避免中文路径下找不到 "windows" 插件
 def _setup_qt_plugin_path():
     if getattr(sys, "frozen", False):
+        # 打包后从 PyInstaller 解压目录（_MEIPASS）查找 Qt 平台插件
+        base = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+        for sub in (
+            "PyQt5/Qt5/plugins/platforms",
+            "Qt5/plugins/platforms",
+            "Qt/plugins/platforms",
+            "plugins/platforms",
+            "platforms",
+        ):
+            path = os.path.join(base, *sub.split("/"))
+            if os.path.exists(path) and os.path.exists(os.path.join(path, "qwindows.dll")):
+                os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = os.path.normpath(path)
+                return
         return
     try:
         import PyQt5
