@@ -7,7 +7,7 @@ import base64
 import logging
 from typing import Dict, Any
 
-CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".deepseek_config.json")
+CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".autoscreen_config.json")
 
 # 模板目录：放在项目根目录下，随项目一起迁移/备份
 _PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))

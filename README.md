@@ -1,6 +1,6 @@
-# DeepSeek 批处理工具
+# Excel 智能批处理工具
 
-一个基于 PyQt5 和兼容 OpenAI 接口（如 DeepSeek、硅基流动等）的现代化 Excel 批处理工具，支持自定义 Prompt 模板、多线程处理、智能缓存和错误处理。
+一个基于 PyQt5 和硅基流动 API 的现代化 Excel 批处理工具，支持自定义 Prompt 模板、多线程处理、智能缓存和错误处理。
 
 ## ✨ 功能特点
 
@@ -24,7 +24,7 @@
 
 - Python 3.7 或更高版本
 - Windows / macOS / Linux
-- 兼容 OpenAI 接口的 API 密钥（如 DeepSeek、硅基流动等，在程序内配置）
+- 硅基流动 API 密钥（在程序内配置）
 
 ## 🚀 安装步骤
 
@@ -52,7 +52,7 @@ pip install pandas openpyxl openai PyQt5
 
 ### 3. 配置 API 密钥
 
-**在程序内配置（推荐）：** 运行程序后，在界面中填写 API 密钥、接口地址与模型名，点击保存。配置会保存在用户目录下（`~/.deepseek_config.json`），下次启动会自动加载。支持多 API 配置（Profile）切换。
+**在程序内配置（推荐）：** 运行程序后，在界面中填写 API 密钥与模型名，点击保存。配置会保存在用户目录下（`~/.autoscreen_config.json`），下次启动会自动加载。
 
 无需设置环境变量。
 
@@ -193,7 +193,7 @@ def call_model(prompt: str, max_retries: int = 3):  # 修改这里的数字
 AutoScreen-AI/
 ├── main.py            # 程序入口（精简）
 ├── main_window.py     # 主窗口与业务逻辑
-├── api.py             # DeepSeek API 调用与 Excel 批处理核心逻辑
+├── api.py             # API 调用与 Excel 批处理核心逻辑
 ├── config.py          # 配置路径与 API Key 管理
 ├── workers.py         # 后台工作线程（Worker、ApiTestThread）
 ├── widgets.py         # 自定义控件（标题栏、日志处理器）
@@ -222,7 +222,7 @@ AutoScreen-AI/
 - **PyQt5**：GUI 框架
 - **pandas**：Excel 文件处理
 - **openpyxl**：Excel 文件读写
-- **openai**：兼容 OpenAI 接口的 API 客户端（DeepSeek、硅基流动等）
+- **openai**：兼容 OpenAI 接口的 API 客户端（硅基流动）
 - **concurrent.futures**：多线程处理
 
 ## 📝 更新日志
@@ -257,5 +257,5 @@ AutoScreen-AI/
 
 ---
 
-**注意：** 使用本工具需要有效的 DeepSeek API 密钥，请确保遵守 DeepSeek 的使用条款和 API 调用限制。
+**注意：** 使用本工具需要有效的硅基流动 API 密钥，请确保遵守硅基流动的使用条款和 API 调用限制。
 

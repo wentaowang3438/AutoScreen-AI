@@ -1,5 +1,5 @@
 """
-OpenAI / DeepSeek API 调用与 Excel 批处理逻辑
+API 调用与 Excel 批处理逻辑
 """
 import time
 import logging
@@ -127,7 +127,8 @@ def process_row(row_index, merged_text, delimiter, prompt_template, cache_key, s
         error = True
         error_msg = "API 返回空"
         result = f"FAIL{delimiter}FAIL"
-    elif delimiter not in result:
+    elif delimiter and delimiter not in result:
+        # 仅当分隔符非空时才检查是否包含分隔符
         error = True
         error_msg = "缺少分隔符"
         result = f"FAIL{delimiter}FAIL"

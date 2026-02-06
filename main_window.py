@@ -365,14 +365,14 @@ class MainWindow(QMainWindow):
         p_layout.setSpacing(8)
         prompt_header = QHBoxLayout()
         prompt_header.addWidget(
-            QLabel("Prompt 模板（占位符: {merged_text}、{delimiter}）")
+            QLabel("Prompt 模板（占位符: {merged_text}、{delimiter}[可选]）")
         )
         prompt_header.addStretch()
         prompt_header.addWidget(QLabel("输出分隔符"))
         self.delim_edit = QLineEdit("|")
         self.delim_edit.setFixedWidth(48)
         self.delim_edit.setAlignment(Qt.AlignCenter)
-        self.delim_edit.setToolTip("AI 返回字段间的分隔符，如 | 或 \\t")
+        self.delim_edit.setToolTip("AI 返回字段间的分隔符（可选），如 | 或 \\t。留空表示不使用分隔符")
         prompt_header.addWidget(self.delim_edit)
         p_layout.addLayout(prompt_header)
 
@@ -409,7 +409,7 @@ class MainWindow(QMainWindow):
         self.prompt_edit = QTextEdit()
         self.prompt_edit.setPlaceholderText("在此输入你的 Prompt...")
         self.prompt_edit.setToolTip(
-            "输入 AI Prompt 模板\n使用 {merged_text} 占位符表示合并后的列内容\n使用 {delimiter} 占位符表示输出分隔符"
+            "输入 AI Prompt 模板\n使用 {merged_text} 占位符表示合并后的列内容\n使用 {delimiter} 占位符表示输出分隔符（可选）"
         )
         self.prompt_edit.setMinimumHeight(100)
         self.prompt_edit.setPlainText(DEFAULT_PROMPT)
@@ -1004,9 +1004,6 @@ class MainWindow(QMainWindow):
             return
         if not selected_cols:
             QMessageBox.warning(self, "提示", "请至少勾选一列数据")
-            return
-        if not delimiter:
-            QMessageBox.warning(self, "提示", "分隔符不能为空")
             return
         if not prompt:
             QMessageBox.warning(self, "提示", "Prompt 模板不能为空")

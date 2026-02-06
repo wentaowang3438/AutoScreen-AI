@@ -1,5 +1,5 @@
 """
-DeepSeek Excel 智能批处理工具 - 程序入口
+Excel 智能批处理工具 - 程序入口
 """
 import os
 import sys

@@ -38,7 +38,7 @@ class CustomTitleBar(QWidget):
         layout.setContentsMargins(12, 0, 6, 0)
         layout.setSpacing(0)
 
-        self.title_label = QLabel("DeepSeek Excel 智能批处理工具")
+        self.title_label = QLabel("Excel 智能批处理工具")
         self.title_label.setObjectName("TitleLabel")
         self.title_label.setAlignment(Qt.AlignVCenter)
         layout.addWidget(self.title_label, 0, Qt.AlignVCenter)
