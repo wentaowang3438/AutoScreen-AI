@@ -6,6 +6,7 @@ __pycache__/
 # 本地/测试数据（不随仓库或分发包提交）
 result_fast.xlsx
 output.xlsx
+output/
 
 # PyInstaller / 打包产物
 dist/
