@@ -3,6 +3,11 @@ __pycache__/
 *.py[cod]
 *.pyo
 
+# IDE 配置
+.cursor/
+.vscode/
+.idea/
+
 # 本地/测试数据（不随仓库或分发包提交）
 result_fast.xlsx
 output.xlsx
