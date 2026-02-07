@@ -10,6 +10,9 @@ __pycache__/
 
 # 本地/测试数据（不随仓库或分发包提交）
 result_fast.xlsx
+
+# 录屏输出目录（不同步）
+AutoScreen-AI录屏/
 output.xlsx
 output/
 
